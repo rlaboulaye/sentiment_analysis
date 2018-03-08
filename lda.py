@@ -22,52 +22,70 @@ def get_documents(directory_path):
 					print(e)
 	return documents
 
-def get_corpus(directory_path='./documents'):
+def get_corpus(directory_path='./documents/toy'):
 	documents = get_documents(directory_path)
 	preprocessed_documents = preprocess(documents)
 	dictionary = corpora.Dictionary(preprocessed_documents)
 	corpus = [dictionary.doc2bow(document) for document in preprocessed_documents]
 	return dictionary, corpus
 
-def initialize_parameters(topics, X, alpha, beta):
-	num_documents = X.shape[0]
-	num_words = X.shape[1]
-	Z = np.random.randint(topics, size=(num_documents, num_words))
+def initialize_parameters(topics, dictionary, corpus, alpha, beta):
+	num_documents = len(corpus)
+	num_words = len(dictionary)
+
+	Z = []
 	C_WT = np.zeros((num_words, topics))
 	C_DT = np.zeros((num_documents, topics))
-	for document_index in range(num_documents):
-		for word_index in range(num_words):
-			topic = Z[document_index, word_index]
-			# we chose to scale with co occurrence matrix
-			count = X[document_index, word_index]
-			C_WT[word_index, topic] += count
-			C_DT[document_index, topic] += count
+	for document_index, document in enumerate(corpus):
+		Z_document = []
+		for word_occurrence_tuple in document:
+			word_index = word_occurrence_tuple[0]
+			count = word_occurrence_tuple[1]
+			for i in range(count):
+				topic_assignment = np.random.randint(topics)
+				Z_document.append([word_index, topic_assignment])
+				C_WT[word_index, topic_assignment] += 1
+				C_DT[document_index, topic_assignment] += 1
+		Z.append(Z_document)
+
+	#Z = np.random.randint(topics, size=(num_documents, num_words))
+	# C_WT = np.zeros((num_words, topics))
+	# C_DT = np.zeros((num_documents, topics))
+	# for document_index in range(num_documents):
+	# 	for word_index in range(num_words):
+	# 		topic = Z[document_index, word_index]
+	# 		# we chose to scale with co occurrence matrix
+	# 		count = X[document_index, word_index]
+	# 		C_WT[word_index, topic] += count
+	# 		C_DT[document_index, topic] += count
 	# C_WT = np.array([np.random.dirichlet(beta * np.ones(topics)) for i in range(num_words)])
 	# C_DT = np.array([np.random.dirichlet(alpha * np.ones(topics)) for i in range(num_documents)])
 	return Z, C_WT, C_DT 
 
-def run_gensim_lda(topics, passes=100):
+def run_gensim_lda(topics, passes=100, num_words_to_display=20):
 	dictionary, corpus = get_corpus()
 	ldamodel = models.ldamodel.LdaModel(corpus, num_topics=topics, id2word = dictionary, passes=passes)
-	print(ldamodel.print_topics(num_topics=topics, num_words=4))
+	print(ldamodel.print_topics(num_topics=topics, num_words=num_words_to_display))
 
-def run_lda(topics, passes=100, alpha=.1, beta=.01):
+def display_phi(phi, dictionary, num_words_to_display):
+	for topic_index, topic in enumerate(phi):
+		labelled_probabilities = [(dictionary[word_index], prob) for word_index, prob in enumerate(topic)]
+		sorted_probabilities = sorted(labelled_probabilities, key=lambda x: x[1], reverse=True)[:num_words_to_display]
+		print('Topic ' + str(topic_index) + ': ', sorted_probabilities)
+
+def run_lda(topics, passes=100, alpha=.1, beta=.01, num_words_to_display=20):
 	dictionary, corpus = get_corpus()
 	print(dictionary)
 	num_documents = len(corpus)
 	num_words = len(dictionary)
-	X = np.zeros(shape=(num_documents, num_words))
-	for document_index in range(num_documents):
-		for word_occurrence_tuple in corpus[document_index]:
-			X[document_index, word_occurrence_tuple[0]] = word_occurrence_tuple[1]
-	Z, C_WT, C_DT = initialize_parameters(topics, X, alpha, beta)
+	Z, C_WT, C_DT = initialize_parameters(topics, dictionary, corpus, alpha, beta)
 	for i in range(passes):
-		gibbs_sampling(X, Z, C_WT, C_DT, alpha, beta)
+		gibbs_sampling(Z, C_WT, C_DT, alpha, beta)
 
 	theta = (C_DT + alpha) / np.sum(C_DT+ alpha, axis=1)[:, None]
 	phi = ((C_WT + beta) / np.sum((C_WT + beta), axis=0)).T
-	print(phi)
+	display_phi(phi, dictionary, num_words_to_display)
 
 if __name__ == "__main__":
-	run_gensim_lda(2, 1)
-	#run_lda(2)
+	run_gensim_lda(2, 500)
+	run_lda(2, 500, num_words_to_display=20)
