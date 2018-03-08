@@ -1,4 +1,5 @@
 import os
+import time
 
 import numpy as np
 from gensim import corpora, models
@@ -22,7 +23,7 @@ def get_documents(directory_path):
 					print(e)
 	return documents
 
-def get_corpus(directory_path='./documents/toy'):
+def get_corpus(directory_path='./documents/txt_sentoken'):
 	documents = get_documents(directory_path)
 	preprocessed_documents = preprocess(documents)
 	dictionary = corpora.Dictionary(preprocessed_documents)
@@ -68,24 +69,28 @@ def run_gensim_lda(topics, passes=100, num_words_to_display=20):
 	print(ldamodel.print_topics(num_topics=topics, num_words=num_words_to_display))
 
 def display_phi(phi, dictionary, num_words_to_display):
-	for topic_index, topic in enumerate(phi):
+	for topic_index, topic in enumerate(phi.T):
 		labelled_probabilities = [(dictionary[word_index], prob) for word_index, prob in enumerate(topic)]
 		sorted_probabilities = sorted(labelled_probabilities, key=lambda x: x[1], reverse=True)[:num_words_to_display]
 		print('Topic ' + str(topic_index) + ': ', sorted_probabilities)
 
 def run_lda(topics, passes=100, alpha=.1, beta=.01, num_words_to_display=20):
 	dictionary, corpus = get_corpus()
-	print(dictionary)
 	num_documents = len(corpus)
 	num_words = len(dictionary)
 	Z, C_WT, C_DT = initialize_parameters(topics, dictionary, corpus, alpha, beta)
 	for i in range(passes):
-		gibbs_sampling(Z, C_WT, C_DT, alpha, beta)
+		print(gibbs_sampling(Z, C_WT, C_DT, alpha, beta))
 
 	theta = (C_DT + alpha) / np.sum(C_DT+ alpha, axis=1)[:, None]
-	phi = ((C_WT + beta) / np.sum((C_WT + beta), axis=0)).T
+	phi = ((C_WT + beta) / np.sum((C_WT + beta), axis=0))
 	display_phi(phi, dictionary, num_words_to_display)
 
 if __name__ == "__main__":
-	run_gensim_lda(2, 500)
-	run_lda(2, 500, num_words_to_display=20)
+	passes = 2
+	start_time = time.time()
+	run_gensim_lda(2, passes, num_words_to_display=50)
+	print('Gensim time: ' + str(time.time() - start_time))
+	start_time = time.time()
+	run_lda(2, passes, num_words_to_display=50)
+	print('Our time: ' + str(time.time() - start_time))
