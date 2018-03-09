@@ -31,49 +31,10 @@ def get_corpus(directory_path='./documents/toy'):
 	corpus = [dictionary.doc2bow(document) for document in preprocessed_documents]
 	return dictionary, corpus
 
-def initialize_parameters(topics, dictionary, corpus, alpha, beta):
-	num_documents = len(corpus)
-	num_words = len(dictionary)
-
-	Z = []
-	C_WT = np.zeros((num_words, topics))
-	C_DT = np.zeros((num_documents, topics))
-	for document_index, document in enumerate(corpus):
-		Z_document = []
-		for word_occurrence_tuple in document:
-			word_index = word_occurrence_tuple[0]
-			count = word_occurrence_tuple[1]
-			for i in range(count):
-				topic_assignment = np.random.randint(topics)
-				Z_document.append([word_index, topic_assignment])
-				C_WT[word_index, topic_assignment] += 1
-				C_DT[document_index, topic_assignment] += 1
-		Z.append(Z_document)
-	return Z, C_WT, C_DT
-
 def run_gensim_lda(topics, passes=100, num_words_to_display=20):
 	dictionary, corpus = get_corpus()
 	ldamodel = models.ldamodel.LdaModel(corpus, num_topics=topics, id2word = dictionary, passes=passes)
 	print(ldamodel.print_topics(num_topics=topics, num_words=num_words_to_display))
-
-def display_phi(phi, dictionary, num_words_to_display):
-	for topic_index, topic in enumerate(phi.T):
-		labelled_probabilities = [(dictionary[word_index], prob) for word_index, prob in enumerate(topic)]
-		sorted_probabilities = sorted(labelled_probabilities, key=lambda x: x[1], reverse=True)[:num_words_to_display]
-		print('Topic ' + str(topic_index) + ': ', sorted_probabilities)
-
-def run_lda(topics, passes=100, alpha=.1, beta=.01, num_words_to_display=20):
-	dictionary, corpus = get_corpus()
-	num_documents = len(corpus)
-	num_words = len(dictionary)
-	Z, C_WT, C_DT = initialize_parameters(topics, dictionary, corpus, alpha, beta)
-	for i in range(passes):
-		gibbs_sampling(Z, C_WT, C_DT, alpha, beta)
-
-	theta = (C_DT + alpha) / np.sum(C_DT+ alpha, axis=1)[:, None]
-	phi = ((C_WT + beta) / np.sum((C_WT + beta), axis=0))
-	display_phi(phi, dictionary, num_words_to_display)
-
 
 class LDA():
 
@@ -164,7 +125,7 @@ class LDA():
 		return log_prob
 
 if __name__ == "__main__":
-	n_passes = 1000
+	n_passes = 3
 	n_topics = 2
 	n_words_to_display = 50
 
