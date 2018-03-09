@@ -1,6 +1,5 @@
 import numpy as np
 
-# X - document word co-occurrence matrix
 # Z - word topic assignment
 # C_WT - word topic matrix of counts
 # C_DT - document topic matrix of counts

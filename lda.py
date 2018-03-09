@@ -23,7 +23,7 @@ def get_documents(directory_path):
 					print(e)
 	return documents
 
-def get_corpus(directory_path='./documents/txt_sentoken'):
+def get_corpus(directory_path='./documents/toy'):
 	documents = get_documents(directory_path)
 	preprocessed_documents = preprocess(documents)
 	dictionary = corpora.Dictionary(preprocessed_documents)
@@ -48,20 +48,7 @@ def initialize_parameters(topics, dictionary, corpus, alpha, beta):
 				C_WT[word_index, topic_assignment] += 1
 				C_DT[document_index, topic_assignment] += 1
 		Z.append(Z_document)
-
-	#Z = np.random.randint(topics, size=(num_documents, num_words))
-	# C_WT = np.zeros((num_words, topics))
-	# C_DT = np.zeros((num_documents, topics))
-	# for document_index in range(num_documents):
-	# 	for word_index in range(num_words):
-	# 		topic = Z[document_index, word_index]
-	# 		# we chose to scale with co occurrence matrix
-	# 		count = X[document_index, word_index]
-	# 		C_WT[word_index, topic] += count
-	# 		C_DT[document_index, topic] += count
-	# C_WT = np.array([np.random.dirichlet(beta * np.ones(topics)) for i in range(num_words)])
-	# C_DT = np.array([np.random.dirichlet(alpha * np.ones(topics)) for i in range(num_documents)])
-	return Z, C_WT, C_DT 
+	return Z, C_WT, C_DT
 
 def run_gensim_lda(topics, passes=100, num_words_to_display=20):
 	dictionary, corpus = get_corpus()
@@ -80,17 +67,107 @@ def run_lda(topics, passes=100, alpha=.1, beta=.01, num_words_to_display=20):
 	num_words = len(dictionary)
 	Z, C_WT, C_DT = initialize_parameters(topics, dictionary, corpus, alpha, beta)
 	for i in range(passes):
-		print(gibbs_sampling(Z, C_WT, C_DT, alpha, beta))
+		gibbs_sampling(Z, C_WT, C_DT, alpha, beta)
 
 	theta = (C_DT + alpha) / np.sum(C_DT+ alpha, axis=1)[:, None]
 	phi = ((C_WT + beta) / np.sum((C_WT + beta), axis=0))
 	display_phi(phi, dictionary, num_words_to_display)
 
+
+class LDA():
+
+	def __init__(self):
+		pass
+
+	def load_corpus(self, directory="./documents/toy/"):
+		documents = get_documents(directory)
+		preprocessed_documents = preprocess(documents)
+		self.dictionary = corpora.Dictionary(preprocessed_documents)
+		self.n_words = len(self.dictionary)
+		self.corpus = [self.dictionary.doc2bow(document) for document in preprocessed_documents]
+		self.n_documents = len(self.corpus)
+
+	def _init_parameters(self, n_topics):
+		self.Z = []
+		self.C_WT = np.zeros((self.n_words, n_topics))
+		self.C_DT = np.zeros((self.n_documents, n_topics))
+		for document_index, document in enumerate(self.corpus):
+			Z_document = []
+			for word_occurrence_tuple in document:
+				word_index = word_occurrence_tuple[0]
+				count = word_occurrence_tuple[1]
+				for _ in range(count):
+					topic_assignment = np.random.randint(n_topics)
+					Z_document.append([word_index, topic_assignment])
+					self.C_WT[word_index, topic_assignment] += 1
+					self.C_DT[document_index, topic_assignment] += 1
+			self.Z.append(Z_document)
+
+	def train(self, n_topics, alpha=.1, beta=.01, iters=100):
+		self.alpha = alpha
+		self.beta = beta
+		self._init_parameters(n_topics)
+		self.prob_word_under_topic_denominator = np.sum(self.C_WT + beta, axis=0)
+		for _ in range(iters):
+			self._gibbs_sample(n_topics)
+
+	def _gibbs_sample(self, n_topics):
+		probabilities = []
+		for document_index, Z_document in enumerate(self.Z):
+			document_length = len(Z_document)
+			prob_topic_under_document_denominator = document_length + n_topics * self.alpha
+			for Z_token_pair in Z_document:
+				word_index = Z_token_pair[0]
+				current_topic_assignment = Z_token_pair[1]
+
+				self.C_WT[word_index, current_topic_assignment] -= 1
+				self.C_DT[document_index, current_topic_assignment] -= 1
+				self.prob_word_under_topic_denominator[current_topic_assignment] -= 1
+
+				prob_topic_under_document_numerator = self.C_DT[document_index] + self.alpha
+				prob_word_under_topic_numerator = self.C_WT[word_index] + self.beta
+
+
+
+				prob_dist_over_topics = (prob_word_under_topic_numerator / self.prob_word_under_topic_denominator) * \
+					(prob_topic_under_document_numerator / prob_topic_under_document_denominator)
+				Z_token_pair[1] = np.random.multinomial(1, prob_dist_over_topics / np.sum(prob_dist_over_topics)).argmax()
+
+				current_topic_assignment = Z_token_pair[1]
+				probabilities.append(prob_dist_over_topics[current_topic_assignment])
+				self.C_WT[word_index, current_topic_assignment] += 1
+				self.C_DT[document_index, current_topic_assignment] += 1
+				self.prob_word_under_topic_denominator[current_topic_assignment] += 1
+
+		return np.sum(np.log(probabilities))
+
+	def get_theta(self):
+		return (self.C_DT + self.alpha) / (self.C_DT+ self.alpha).sum(axis=1).reshape((-1, 1))
+
+	def get_phi(self):
+		return (self.C_WT + self.beta) / (self.C_WT + self.beta).sum(axis=0)
+
+	def print_phi(self, n_words):
+		phi = self.get_phi()
+		for topic_index, topic, in enumerate(phi.T):
+			labelled_probabilities = [(self.dictionary[word_index], prob) for word_index, prob in enumerate(topic)]
+			sorted_probabilities = sorted(labelled_probabilities, key=lambda x: x[1], reverse=True)[:n_words]
+			print('Topic {}:'.format(topic_index), sorted_probabilities)
+
 if __name__ == "__main__":
-	passes = 2
+	n_passes = 10000
+	n_topics = 2
+	n_words_to_display = 50
+	# start_time = time.time()
+	# run_gensim_lda(2, passes, num_words_to_display=50)
+	# print('Gensim time: ' + str(time.time() - start_time))
 	start_time = time.time()
-	run_gensim_lda(2, passes, num_words_to_display=50)
-	print('Gensim time: ' + str(time.time() - start_time))
+	run_lda(n_topics, n_passes, num_words_to_display=n_words_to_display)
+	print('Our time: ' + str(time.time() - start_time))
+
 	start_time = time.time()
-	run_lda(2, passes, num_words_to_display=50)
+	lda = LDA()
+	lda.load_corpus()
+	lda.train(n_topics, iters=n_passes)
+	lda.print_phi(n_words_to_display)
 	print('Our time: ' + str(time.time() - start_time))
