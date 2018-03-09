@@ -23,7 +23,7 @@ def get_documents(directory_path):
 					print(e)
 	return documents
 
-def get_corpus(directory_path='./documents/sentoken/'):
+def get_corpus(directory_path='./documents/txt_sentoken/'):
 	documents = get_documents(directory_path)
 	preprocessed_documents = preprocess(documents)
 	dictionary = corpora.Dictionary(preprocessed_documents)
@@ -40,7 +40,7 @@ class LDA():
 	def __init__(self):
 		pass
 
-	def load_corpus(self, directory="./documents/sentoken/"):
+	def load_corpus(self, directory="./documents/txt_sentoken/"):
 		documents = get_documents(directory)
 		preprocessed_documents = preprocess(documents)
 		self.dictionary = corpora.Dictionary(preprocessed_documents)

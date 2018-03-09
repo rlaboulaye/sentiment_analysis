@@ -4,7 +4,7 @@ from nltk.stem.porter import PorterStemmer
 
 def preprocess(documents):
 
-	tokenizer = RegexpTokenizer(r'\w+')
+	tokenizer = RegexpTokenizer(r'\w+\'[a-z]+|\w+')
 	en_stop = get_stop_words('en')
 	p_stemmer = PorterStemmer()
 
