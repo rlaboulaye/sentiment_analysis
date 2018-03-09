@@ -5,7 +5,6 @@ import numpy as np
 from gensim import corpora, models
 
 from preprocess import preprocess
-from gibbs_sampling import gibbs_sampling
 
 
 def get_documents(directory_path):
@@ -24,7 +23,7 @@ def get_documents(directory_path):
 					print(e)
 	return documents
 
-def get_corpus(directory_path='./documents/toy'):
+def get_corpus(directory_path='./documents/sentoken/'):
 	documents = get_documents(directory_path)
 	preprocessed_documents = preprocess(documents)
 	dictionary = corpora.Dictionary(preprocessed_documents)
@@ -41,7 +40,7 @@ class LDA():
 	def __init__(self):
 		pass
 
-	def load_corpus(self, directory="./documents/toy/"):
+	def load_corpus(self, directory="./documents/sentoken/"):
 		documents = get_documents(directory)
 		preprocessed_documents = preprocess(documents)
 		self.dictionary = corpora.Dictionary(preprocessed_documents)
