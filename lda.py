@@ -7,6 +7,7 @@ from gensim import corpora, models
 from preprocess import preprocess
 from gibbs_sampling import gibbs_sampling
 
+
 def get_documents(directory_path):
 	documents = []
 	for (path,dirs,files) in os.walk(directory_path):
@@ -107,12 +108,15 @@ class LDA():
 		self.alpha = alpha
 		self.beta = beta
 		self._init_parameters(n_topics)
+		log_probs = []
+		log_probs.append(self._compute_log_prob())
 		self.prob_word_under_topic_denominator = np.sum(self.C_WT + beta, axis=0)
 		for _ in range(iters):
 			self._gibbs_sample(n_topics)
+			log_probs.append(self._compute_log_prob())
+		return log_probs
 
 	def _gibbs_sample(self, n_topics):
-		probabilities = []
 		for document_index, Z_document in enumerate(self.Z):
 			document_length = len(Z_document)
 			prob_topic_under_document_denominator = document_length + n_topics * self.alpha
@@ -126,20 +130,15 @@ class LDA():
 
 				prob_topic_under_document_numerator = self.C_DT[document_index] + self.alpha
 				prob_word_under_topic_numerator = self.C_WT[word_index] + self.beta
-
-
-
 				prob_dist_over_topics = (prob_word_under_topic_numerator / self.prob_word_under_topic_denominator) * \
 					(prob_topic_under_document_numerator / prob_topic_under_document_denominator)
-				Z_token_pair[1] = np.random.multinomial(1, prob_dist_over_topics / np.sum(prob_dist_over_topics)).argmax()
 
-				current_topic_assignment = Z_token_pair[1]
-				probabilities.append(prob_dist_over_topics[current_topic_assignment])
+				current_topic_assignment = np.random.multinomial(1, prob_dist_over_topics / np.sum(prob_dist_over_topics)).argmax()
+				Z_token_pair[1] = current_topic_assignment
+
 				self.C_WT[word_index, current_topic_assignment] += 1
 				self.C_DT[document_index, current_topic_assignment] += 1
 				self.prob_word_under_topic_denominator[current_topic_assignment] += 1
-
-		return np.sum(np.log(probabilities))
 
 	def get_theta(self):
 		return (self.C_DT + self.alpha) / (self.C_DT+ self.alpha).sum(axis=1).reshape((-1, 1))
@@ -154,20 +153,32 @@ class LDA():
 			sorted_probabilities = sorted(labelled_probabilities, key=lambda x: x[1], reverse=True)[:n_words]
 			print('Topic {}:'.format(topic_index), sorted_probabilities)
 
+	def _compute_log_prob(self):
+		log_theta = np.log(self.get_theta())
+		log_phi = np.log(self.get_phi())
+		log_prob = 0
+		for document_index in range(len(self.Z)):
+			for j in range(len(self.Z[document_index])):
+				word_index, topic_index = self.Z[document_index][j]
+				log_prob += log_theta[document_index, topic_index] + log_phi[word_index, topic_index]
+		return log_prob
+
 if __name__ == "__main__":
-	n_passes = 10000
+	n_passes = 1000
 	n_topics = 2
 	n_words_to_display = 50
-	# start_time = time.time()
-	# run_gensim_lda(2, passes, num_words_to_display=50)
-	# print('Gensim time: ' + str(time.time() - start_time))
+
 	start_time = time.time()
-	run_lda(n_topics, n_passes, num_words_to_display=n_words_to_display)
-	print('Our time: ' + str(time.time() - start_time))
+	run_gensim_lda(n_topics, n_passes, num_words_to_display=50)
+	print('Gensim time: ' + str(time.time() - start_time))
+
+	# start_time = time.time()
+	# run_lda(n_topics, n_passes, num_words_to_display=n_words_to_display)
+	# print('Our time: ' + str(time.time() - start_time))
 
 	start_time = time.time()
 	lda = LDA()
 	lda.load_corpus()
-	lda.train(n_topics, iters=n_passes)
+	print(lda.train(n_topics, iters=n_passes))
 	lda.print_phi(n_words_to_display)
 	print('Our time: ' + str(time.time() - start_time))
