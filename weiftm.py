@@ -1,70 +1,221 @@
+import os
+import time
+
 import numpy as np
-from pypolyagamma import PyPolyaGamma
 from scipy.special import beta as beta_function, expit as sigmoid
 
-pg = PyPolyaGamma()
+from gensim import corpora, models
+from pypolyagamma import PyPolyaGamma
 
-# alpha=.1
-n_topics = 10
-n_words = 1000
-sig_0 = 1.0
-embedding_size = 100
-p = .3
-beta_0 = .01
+from preprocess import preprocess_tweets
 
-f = np.random.rand(n_words, embedding_size)
-f_outer = np.array([np.outer(f_v,f_v) for f_v in f])
 
-b = np.random.binomial(1, p, (n_topics, n_words))
-sig_I_lamb = sig_0**2 * np.eye(embedding_size)
-lamb = np.random.multivariate_normal(np.zeros(embedding_size), sig_I_lamb, size=n_topics)
-sig_I_c = sig_0**2 * np.eye(n_topics)
-c = np.random.multivariate_normal(np.zeros(n_topics), sig_I_c).reshape((-1,1))
+class WEIFTM():
 
-def get_pi(f, lamb, c):
-    return lamb.dot(f.T) + c
+    def __init__(self):
+        self.NO_TOPIC = -1
+        self.pg = PyPolyaGamma()
 
-pi = get_pi(f, lamb, c)
+    def _get_documents(self, directory_path):
+        documents = []
+        for (path,dirs,files) in os.walk(directory_path):
+            files.sort()
+            for file_path in files:
+                if file_path.endswith('.txt'):
+                    document_path = os.path.join(path, file_path)
+                    try:
+                        file = open(document_path, 'r')
+                        document = file.read()
+                        file.close()
+                        documents.append(document)
+                    except Exception as e:
+                        print(e)
+        return documents
 
-def sample_gamma(pi, gamma):
-    # todo vectorize
-    for k in range(pi.shape[0]):
-        for v in range(pi.shape[1]):
-            gamma[k,v] = pg.pgdraw(1, pi[k,v])
-    return gamma
+    def get_embedding_vocabulary(self, embedding_path):
+        vocabulary = set()
+        with open(embedding_path) as emb_file:
+            for line in emb_file:
+                if line != "":
+                    word = line.strip().split(" ", 1)[0]
+                    vocabulary.add(word)
+        return vocabulary
 
-gamma = sample_gamma(pi, np.zeros(pi.shape))
+    def load_corpus(self, corpus_dir, vocabulary):
+        documents = self._get_documents(corpus_dir)
+        preprocessed_documents = preprocess_tweets(documents, vocabulary)
+        self.dictionary = corpora.Dictionary(preprocessed_documents)
+        self.n_words = len(self.dictionary)
+        self.corpus = [self.dictionary.doc2bow(document) for document in preprocessed_documents]
+        self.n_documents = len(self.corpus)
 
-sig_I_lamb_inv = sig_0**-2 * np.eye(embedding_size)
+    def load_embeddings(self, embedding_size, embedding_path, corpus_dir):
+        self.embedding_size = embedding_size
+        cache_dir = "./cache/{}/".format(corpus_dir.strip(os.path.sep).split(os.path.sep)[-1])
+        embedding_cache_path = cache_dir + "embedding{}.npy".format(embedding_size)
+        if os.path.isfile(embedding_cache_path):
+            self.f = np.load(embedding_cache_path)
+        else:
+            vocabulary = set(self.dictionary.values())
+            self.f = np.empty((self.n_words, self.embedding_size))
+            with open(embedding_path) as emb_file:
+                for line in emb_file:
+                    if line != "":
+                        word, str_embedding = line.strip().split(" ", 1)
+                        if word in vocabulary:
+                            word_index = self.dictionary.token2id[word]
+                            self.f[word_index] = np.array(str_embedding.split(" "), dtype=float)
+            if not os.path.isdir(cache_dir):
+                os.makedirs(cache_dir)
+            np.save(embedding_cache_path, self.f)
+        self.f_outer = np.array([np.outer(f_v,f_v) for f_v in self.f])
 
-def sample_lambda_and_c(gamma, f, sig_I_lamb_inv, b, lamb, c):
-    for k in range(n_topics):
-        # sample lambda
-        SIGMA_k = np.linalg.inv(f_outer.T.dot(gamma[k]) + sig_I_lamb_inv)
-        b_cgam = (b[k] - .5 - c[k]*gamma[k])
-        MU_k = SIGMA_k.dot(b_cgam.dot(f))
-        lamb[k] = np.random.multivariate_normal(MU_k, SIGMA_k)
-        # sample c
-        sig_k = (np.sum(gamma[k]) + sig_0**-2)**-1
-        mu_k = sig_k * np.sum(b_cgam)
-        c[k] = np.random.normal(mu_k, sig_k)
+    def _initialize_parameters(self, n_topics, topic_sparsity):
+        self._init_b(n_topics, topic_sparsity)
+        self._init_n_m_Z(n_topics)
+        self._init_lamb(n_topics)
+        self._init_c(n_topics)
+        self._set_pi()
+        self._init_gamma(n_topics)
 
-def sample_b(word_index, b, n, pi):
-    b_not_v_beta = np.sum(b, axis=1) - b[:, word_index] * beta_0
-    num_a = b_not_v_beta + np.sum(n, axis=1)
-    num_b = beta_0
-    num = beta_function(num_a, num_b)
-    denom = beta_function(b_not_v_beta, beta_0)
-    activation = sigmoid(pi[:,word_index])
-    p_1 = num * activation / denom
-    p_0 = 1 - activation
-    p = p_1 / (p_1 + p_0)
-    return np.random.binomial(1, p)
+    def _init_b(self, n_topics, topic_sparsity):
+        self.b = np.random.binomial(1, topic_sparsity, (n_topics, self.n_words))
 
-# sample_lambda_and_c(gamma, f, sig_I_lamb_inv, b, lamb, c)
-# print(lamb)
-# print(c)
+    def _init_n_m_Z(self, n_topics):
+        assert(hasattr(self, "b"))
 
-print(sample_b(7, b, np.random.randint(10, size=(n_topics, n_words)), pi))
+        self.n = np.zeros((n_topics, self.n_words))
+        self.m = np.zeros((self.n_documents, n_topics))
+        self.Z = []
+        for document_index, document in enumerate(self.corpus):
+            Z_document = []
+            for word_occurrence_tuple in document:
+                word_index = word_occurrence_tuple[0]
+                count = word_occurrence_tuple[1]
+                for _ in range(count):
+                    nonzero_b = self.b[:, word_index].nonzero()[0]
+                    if len(nonzero_b) == 0:
+                        topic_assignment = self.NO_TOPIC
+                    else:
+                        topic_assignment = np.random.choice(nonzero_b)
+                        self.n[topic_assignment, word_index] += 1
+                        self.m[document_index, topic_assignment] += 1
+                    Z_document.append([word_index, topic_assignment])
+            self.Z.append(Z_document)
 
-#todo sample z and beta_0
+    def _init_lamb(self, n_topics):
+        sig_I_lamb = self.sig_0**2 * np.eye(self.embedding_size)
+        self.lamb = np.random.multivariate_normal(np.zeros(self.embedding_size), sig_I_lamb, size=n_topics)
+        self.sig_I_lamb_inv = self.sig_0**-2 * np.eye(self.embedding_size)
+
+    def _init_c(self, n_topics):
+        sig_I_c = self.sig_0**2 * np.eye(n_topics)
+        self.c = np.random.multivariate_normal(np.zeros(n_topics), sig_I_c).reshape((-1,1))
+
+    def _set_pi(self):
+        self.pi = self.lamb.dot(self.f.T) + self.c
+
+    def _init_gamma(self, n_topics):
+        self.gamma = np.empty((n_topics, self.n_words))
+
+    def train(self, n_topics, topic_sparsity=.3, alpha_0=.1, beta_0=.01, delta_0=1, sig_0=1, iters=10):
+        self.alpha_0 = alpha_0
+        self.beta_0 = beta_0
+        self.delta_0 = delta_0
+        self.sig_0 = sig_0
+        self._initialize_parameters(n_topics, topic_sparsity)
+        log_probs = []
+        for i in range(iters):
+            self._gibbs_sample(n_topics)
+            # log_probs.append(self._compute_total_log_prob())
+        return log_probs
+
+    def _gibbs_sample(self, n_topics):
+        for document_index, Z_document in enumerate(self.Z):
+            document_length = len(Z_document)
+            for Z_token_pair in Z_document:
+                word_index = Z_token_pair[0]
+                topic_assignment = Z_token_pair[1]
+                if topic_assignment != self.NO_TOPIC:
+                    self.n[topic_assignment, word_index] -= 1
+                    self.m[document_index, topic_assignment] -= 1
+
+                self._sample_b(word_index)
+                topic_assignment = self._sample_z(document_index, word_index)
+                Z_token_pair[1] = topic_assignment
+
+                if topic_assignment != self.NO_TOPIC:
+                    self.n[topic_assignment, word_index] += 1
+                    self.m[document_index, topic_assignment] += 1
+
+                self._sample_gamma()
+                self._sample_lamb_and_c(n_topics)
+                self._set_pi()
+
+    def _sample_b(self, word_index):
+        b_not_v = np.sum(self.b, axis=1) - self.b[:, word_index]
+        b_not_v[b_not_v == 0] += self.delta_0
+        b_not_v_beta = b_not_v * self.beta_0
+        num_a = b_not_v_beta + np.sum(self.n, axis=1)
+        num_b = self.beta_0
+        num = beta_function(num_a, num_b)
+        denom = beta_function(b_not_v_beta, self.beta_0)
+        activation = sigmoid(self.pi[:,word_index])
+        p_1 = num * activation / denom
+        p_0 = 1 - activation
+        p = p_1 / (p_1 + p_0)
+        self.b[:, word_index] |= np.random.binomial(1, p)
+
+    def _sample_z(self, document_index, word_index):
+        if self.b[:,word_index].sum() == 0:
+            topic_assignment = self.NO_TOPIC # no topic for this document-word
+        else:
+            p = (self.alpha_0 + self.m[document_index]) * (self.n[:,word_index].flatten() + self.beta_0) / (self.n[:,word_index] + self.beta_0).sum() * self.b[:,word_index]
+            p /= p.sum()
+            topic_assignment = np.random.multinomial(1, p).argmax()
+        return topic_assignment
+
+    def _sample_gamma(self):
+        # todo vectorize
+        for k in range(self.pi.shape[0]):
+            for v in range(self.pi.shape[1]):
+                self.gamma[k,v] = self.pg.pgdraw(1, self.pi[k,v])
+
+    def _sample_lamb_and_c(self, n_topics):
+        for k in range(n_topics):
+            # sample lambda
+            SIGMA_k = np.linalg.inv(self.f_outer.T.dot(self.gamma[k]) + self.sig_I_lamb_inv)
+            b_cgam = (self.b[k] - .5 - self.c[k]*self.gamma[k])
+            MU_k = SIGMA_k.dot(b_cgam.dot(self.f))
+            self.lamb[k] = np.random.multivariate_normal(MU_k, SIGMA_k)
+            # sample c
+            sig_k = (np.sum(self.gamma[k]) + self.sig_0**-2)**-1
+            mu_k = sig_k * np.sum(b_cgam)
+            self.c[k] = np.random.normal(mu_k, sig_k)
+
+    def get_phi(self):
+        return (self.n + self.beta_0) / (self.n + self.beta_0).sum(axis=1).reshape(-1, 1)
+
+    def print_phi(self, n_words):
+        phi = self.get_phi()
+        for topic_index, topic, in enumerate(phi):
+            labelled_probabilities = [(self.dictionary[word_index], prob) for word_index, prob in enumerate(topic)]
+            sorted_probabilities = sorted(labelled_probabilities, key=lambda x: x[1], reverse=True)[:n_words]
+            print('Topic {}:'.format(topic_index), sorted_probabilities)
+
+def main():
+    n_topics = 2
+    embedding_size = 50
+    corpus_dir = "./documents/txt_sentoken/"
+    embedding_path = "./glove.6B/glove.6B.{}d.txt".format(embedding_size)
+    weiftm = WEIFTM()
+    embedding_vocabulary = weiftm.get_embedding_vocabulary(embedding_path)
+    weiftm.load_corpus(corpus_dir, embedding_vocabulary)
+    weiftm.load_embeddings(embedding_size, embedding_path, corpus_dir)
+    start_time = time.time()
+    weiftm.train(n_topics, iters=1)
+    print("time: {}".format(time.time() - start_time))
+    # weiftm.print_phi(50)
+
+if __name__ == '__main__':
+    main()
