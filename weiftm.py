@@ -120,6 +120,8 @@ class WEIFTM():
 
     def _init_gamma(self, n_topics):
         self.gamma = np.empty((n_topics, self.n_words))
+        for v in range(self.n_words):
+            self._sample_gamma(v)
 
     def train(self, n_topics, topic_sparsity=.3, alpha_0=.1, beta_0=.01, delta_0=1, sig_0=1, iters=10):
         self.alpha_0 = alpha_0
@@ -167,7 +169,8 @@ class WEIFTM():
                     self.m[document_index, topic_assignment] += 1
 
                 # start_time = time.time()
-                self._sample_gamma()
+                # self._sample_gamma()
+                self._sample_gamma(word_index)
                 # print("sample_gamma", time.time() - start_time)
 
                 # start_time = time.time()
@@ -206,10 +209,12 @@ class WEIFTM():
             topic_assignment = np.random.multinomial(1, p).argmax()
         return topic_assignment
 
-    def _sample_gamma(self):
+    # def _sample_gamma(self):
+    def _sample_gamma(self, word_index):
         for k in range(self.pi.shape[0]):
-            for v in range(self.pi.shape[1]):
-                self.gamma[k,v] = self.pg.pgdraw(1, self.pi[k,v])
+            # for v in range(self.pi.shape[1]):
+            #     self.gamma[k,v] = self.pg.pgdraw(1, self.pi[k,v])
+            self.gamma[k,word_index] = self.pg.pgdraw(1, self.pi[k,word_index])
 
     def _sample_lamb_and_c(self, n_topics):
         for k in range(n_topics):
