@@ -21,12 +21,14 @@ def preprocess(documents):
 
 def preprocess_tweets(documents, vocabulary):
 	tokenizer = RegexpTokenizer(r'\w+\'[a-z]+|\w+')
+	en_stop = get_stop_words('en')
 
 	texts = []
 	for document in documents:
 		clean_document = tweet_preprocessor.clean(document)
 		clean_lower_document = clean_document.lower()
 		tokens = tokenizer.tokenize(clean_lower_document)
-		valid_tokens = [token for token in tokens if token in vocabulary]
+		stopped_tokens = [i for i in tokens if not i in en_stop]
+		valid_tokens = [token for token in stopped_tokens if token in vocabulary]
 		texts.append(tokens)
 	return texts
