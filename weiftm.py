@@ -82,6 +82,7 @@ class WEIFTM():
 
     def _init_b(self, n_topics, topic_sparsity):
         self.b = np.random.binomial(1, topic_sparsity, (n_topics, self.n_words))
+        self.b_sum_ax1 = np.sum(self.b, axis=1)
 
     def _init_n_m_Z(self, n_topics):
         assert(hasattr(self, "b"))
@@ -178,10 +179,12 @@ class WEIFTM():
                 # print("set_pi", time.time() - start_time)
 
     def _sample_b(self, word_index):
-        b_not_v = np.sum(self.b, axis=1) - self.b[:, word_index] # todo optimize here
+        b_not_v = self.b_sum_ax1 - self.b[:, word_index]
+
         b_not_v[b_not_v == 0] += self.delta_0
         b_not_v_beta = b_not_v * self.beta_0
-        num_a = b_not_v_beta + np.sum(self.n, axis=1) # todo optimize here
+
+        num_a = b_not_v_beta + np.sum(self.n, axis=1)
         num_b = self.beta_0
         num = beta_function(num_a, num_b)
         denom = beta_function(b_not_v_beta, self.beta_0)
@@ -189,19 +192,21 @@ class WEIFTM():
         p_1 = num * activation / denom
         p_0 = 1 - activation
         p = p_1 / (p_1 + p_0)
+
+        self.b_sum_ax1 -= self.b[:, word_index]
         self.b[:, word_index] |= np.random.binomial(1, p)
+        self.b_sum_ax1 += self.b[:, word_index]
 
     def _sample_z(self, document_index, word_index):
         if self.b[:,word_index].sum() == 0:
             topic_assignment = self.NO_TOPIC
         else:
-            p = (self.alpha_0 + self.m[document_index]) * (self.n[:,word_index].flatten() + self.beta_0) / (self.n[:,word_index] + self.beta_0).sum() * self.b[:,word_index] # todo optimize here
+            p = (self.alpha_0 + self.m[document_index]) * (self.n[:,word_index].flatten() + self.beta_0) / (self.n[:,word_index] + self.beta_0).sum() * self.b[:,word_index]
             p /= p.sum()
             topic_assignment = np.random.multinomial(1, p).argmax()
         return topic_assignment
 
     def _sample_gamma(self):
-        # todo vectorize
         for k in range(self.pi.shape[0]):
             for v in range(self.pi.shape[1]):
                 self.gamma[k,v] = self.pg.pgdraw(1, self.pi[k,v])
