@@ -2,7 +2,9 @@ import os
 import time
 
 import numpy as np
+from scipy.stats import bernoulli, dirichlet, norm
 from scipy.special import beta as beta_function, expit as sigmoid
+from matplotlib import pyplot as plt
 
 from gensim import corpora, models
 from pypolyagamma import PyPolyaGamma
@@ -124,17 +126,22 @@ class WEIFTM():
         self.delta_0 = delta_0
         self.sig_0 = sig_0
         self._initialize_parameters(n_topics, topic_sparsity)
-        log_probs = []
+        log_likelihoods = []
         for i in range(iters):
+            # start_time = time.time()
             self._gibbs_sample(n_topics)
-            # log_probs.append(self._compute_total_log_prob())
-        return log_probs
+            # print("gibbs", time.time() - start_time)
+
+            # start_time = time.time()
+            log_likelihoods.append(self._compute_total_log_likelihood(n_topics))
+            # print("log_likelihood", time.time() - start_time)
+        return log_likelihoods
 
     def _gibbs_sample(self, n_topics):
         for document_index, Z_document in enumerate(self.Z):
             document_length = len(Z_document)
             for token_index, Z_token_pair in enumerate(Z_document):
-                print(document_index, token_index, document_length)
+                # print(document_index, token_index, document_length)
                 word_index = Z_token_pair[0]
                 topic_assignment = Z_token_pair[1]
                 if topic_assignment != self.NO_TOPIC:
@@ -167,7 +174,7 @@ class WEIFTM():
                 # print("set_pi", time.time() - start_time)
 
     def _sample_b(self, word_index):
-        b_not_v = np.sum(self.b, axis=1) - self.b[:, word_index]
+        b_not_v = np.sum(self.b, axis=1) - self.b[:, word_index] # todo optimize here
         b_not_v[b_not_v == 0] += self.delta_0
         b_not_v_beta = b_not_v * self.beta_0
         num_a = b_not_v_beta + np.sum(self.n, axis=1) # todo optimize here
@@ -182,7 +189,7 @@ class WEIFTM():
 
     def _sample_z(self, document_index, word_index):
         if self.b[:,word_index].sum() == 0:
-            topic_assignment = self.NO_TOPIC # no topic for this document-word
+            topic_assignment = self.NO_TOPIC
         else:
             p = (self.alpha_0 + self.m[document_index]) * (self.n[:,word_index].flatten() + self.beta_0) / (self.n[:,word_index] + self.beta_0).sum() * self.b[:,word_index] # todo optimize here
             p /= p.sum()
@@ -231,8 +238,49 @@ class WEIFTM():
             self.c[k] = np.random.normal(mu_k, sig_k)
             # print("c_k", time.time() - start_time)
 
+    def _compute_total_log_likelihood(self, n_topics):
+        log_likelihood = 0
+
+        theta = self.get_theta()
+        log_theta = np.log(theta)
+        phi = self.get_phi()
+        log_phi = np.log(phi)
+
+        ALPHA = self.alpha_0 * np.ones(n_topics)
+
+        for document_index in range(self.n_documents):
+            # theta
+            log_likelihood += np.log(dirichlet.pdf(theta[document_index], ALPHA))
+
+            for token_index in range(len(self.Z[document_index])):
+                word_index, topic_index = self.Z[document_index][token_index]
+                # w
+                log_likelihood += log_phi[topic_index, word_index]
+                # z
+                log_likelihood += log_theta[document_index, topic_index]
+
+        log_likelihood += np.sum(np.log(bernoulli.pmf(self.b, sigmoid(self.pi))))
+
+        for k in range(n_topics):
+            # phi
+            b_k_nonzero = self.b[k].nonzero()[0]
+            BETA = self.beta_0 * np.ones(b_k_nonzero.shape[0])
+            log_likelihood += np.log(dirichlet.pdf(phi[k][b_k_nonzero], BETA))
+            # c
+            log_likelihood += np.log(norm.pdf(self.c[k], 0, self.sig_0))
+
+            for l in range(self.embedding_size):
+                # lamb
+                log_likelihood += np.log(norm.pdf(self.lamb[k, l], 0, self.sig_0))
+
+        return log_likelihood
+
     def get_phi(self):
-        return (self.n + self.beta_0) / (self.n + self.beta_0).sum(axis=1).reshape(-1, 1)
+        n_b = (self.n + self.beta_0) * self.b
+        return n_b / n_b.sum(axis=1).reshape(-1, 1)
+
+    def get_theta(self):
+        return (self.m + self.alpha_0) / (self.m + self.alpha_0).sum(axis=1).reshape(-1, 1)
 
     def print_phi(self, n_words):
         phi = self.get_phi()
@@ -244,16 +292,25 @@ class WEIFTM():
 def main():
     n_topics = 2
     embedding_size = 50
-    corpus_dir = "./documents/txt_sentoken/"
+    train_iters = 10
+    corpus_dir = "./documents/toy/"
     embedding_path = "./glove.6B/glove.6B.{}d.txt".format(embedding_size)
+
     weiftm = WEIFTM()
     embedding_vocabulary = weiftm.get_embedding_vocabulary(embedding_path)
     weiftm.load_corpus(corpus_dir, embedding_vocabulary)
     weiftm.load_embeddings(embedding_size, embedding_path, corpus_dir)
+
     start_time = time.time()
-    weiftm.train(n_topics, iters=1)
-    # print("time: {}".format(time.time() - start_time))
-    # weiftm.print_phi(50)
+    log_likelihoods = weiftm.train(n_topics, iters=25)
+    print("time: {}".format(time.time() - start_time))
+
+    weiftm.print_phi(50)
+    print(weiftm.b)
+
+    plt.plot(log_likelihoods)
+    plt.show()
+
 
 if __name__ == '__main__':
     main()
