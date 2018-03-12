@@ -138,10 +138,14 @@ class WEIFTM():
         return log_likelihoods
 
     def _gibbs_sample(self, n_topics):
+        # gibbs_iter_time = time.time()
         for document_index, Z_document in enumerate(self.Z):
             document_length = len(Z_document)
             for token_index, Z_token_pair in enumerate(Z_document):
+                # print("gibbs iter", time.time() - gibbs_iter_time)
+                # gibbs_iter_time = time.time()
                 # print(document_index, token_index, document_length)
+
                 word_index = Z_token_pair[0]
                 topic_assignment = Z_token_pair[1]
                 if topic_assignment != self.NO_TOPIC:
@@ -293,7 +297,8 @@ def main():
     n_topics = 2
     embedding_size = 50
     train_iters = 10
-    corpus_dir = "./documents/toy/"
+    corpus_dir = "./documents/txt_sentoken/"
+    # corpus_dir = "./documents/toy/"
     embedding_path = "./glove.6B/glove.6B.{}d.txt".format(embedding_size)
 
     weiftm = WEIFTM()
