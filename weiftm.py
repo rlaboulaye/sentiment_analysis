@@ -127,16 +127,16 @@ class WEIFTM():
         self.delta_0 = delta_0
         self.sig_0 = sig_0
         self._initialize_parameters(n_topics, topic_sparsity)
-        log_likelihoods = []
+        self.log_likelihoods = []
         for i in range(iters):
             # start_time = time.time()
             self._gibbs_sample(n_topics)
             # print("gibbs", time.time() - start_time)
 
             # start_time = time.time()
-            log_likelihoods.append(self._compute_total_log_likelihood(n_topics))
+            self.log_likelihoods.append(self._compute_total_log_likelihood(n_topics))
             # print("log_likelihood", time.time() - start_time)
-        return log_likelihoods
+        return self.log_likelihoods
 
     def _gibbs_sample(self, n_topics):
         # gibbs_iter_time = time.time()
