@@ -1,12 +1,14 @@
 import os
 import time
 from io import StringIO
+import itertools
 
 import numpy as np
 from scipy.stats import bernoulli, dirichlet, norm
 from scipy.special import beta as beta_function, expit as sigmoid
 from matplotlib import pyplot as plt
 import pandas as pd
+from sklearn.preprocessing import LabelEncoder
 
 from gensim import corpora, models
 from pypolyagamma import PyPolyaGamma
@@ -41,6 +43,8 @@ class WEIFTM():
     def get_documents_from_csv(self, csv_path):
         with open(csv_path, 'r', encoding='utf8', errors='ignore') as csv_file:
             dataframe = pd.read_csv(StringIO(csv_file.read()))[:20]
+            dataframe = dataframe.fillna(value={self.CLASS_NAME: ''})
+            dataframe[self.CLASS_NAME] = LabelEncoder().fit_transform(dataframe[self.CLASS_NAME])
             self.labels = dict(dataframe[self.CLASS_NAME])
             return list(dataframe[self.TEXT_NAME])
 
@@ -166,7 +170,7 @@ class WEIFTM():
         for document_index, Z_document in enumerate(self.Z):
             document_length = len(Z_document)
             for token_index, Z_token_pair in enumerate(Z_document):
-                
+
                 # print("gibbs iter", time.time() - gibbs_iter_time)
                 # gibbs_iter_time = time.time()
                 # print(token_index, "/", document_length, document_index, "/", self.n_documents)
@@ -268,10 +272,11 @@ class WEIFTM():
 
             for token_index in range(len(self.Z[document_index])):
                 word_index, topic_index = self.Z[document_index][token_index]
-                # w
-                log_likelihood += log_phi[topic_index, word_index]
-                # z
-                log_likelihood += log_theta[document_index, topic_index]
+                if topic_index != self.NO_TOPIC:
+                    # w
+                    log_likelihood += log_phi[topic_index, word_index]
+                    # z
+                    log_likelihood += log_theta[document_index, topic_index]
 
         log_likelihood += np.sum(np.log(bernoulli.pmf(self.b, sigmoid(self.pi))))
 
@@ -303,10 +308,39 @@ class WEIFTM():
             sorted_probabilities = sorted(labelled_probabilities, key=lambda x: x[1], reverse=True)[:n_words]
             print('Topic {}:'.format(topic_index), sorted_probabilities)
 
+    def print_theta(self):
+        theta = self.get_theta()
+        for document_index, document in enumerate(theta):
+            print('Document {}:'.format(document_index), document)
+
+    def get_classification_accuracy(self, n_topics):
+        theta = self.get_theta()
+        predictions = [distribution.argmax() for distribution in theta]
+        prediction_set = set(predictions)
+        label_set = set(self.labels.values())
+        accuracies = []
+        for tup in itertools.permutations(label_set, len(prediction_set)):
+            count = 0.
+            for index in self.labels:
+                if self.labels[index] == tup[predictions[index]]:
+                    count += 1.
+            accuracies.append(count / len(predictions))
+        print(predictions)
+        print(accuracies)
+        return max(accuracies)
+
+    def plot_log_likelihoods(self, log_likelihoods, path):
+        title = path.strip(os.path.sep).strip('.csv').split(os.path.sep)[-1]
+        plt.title(title)
+        plt.xlabel('epoch')
+        plt.ylabel('log likehood')
+        plt.plot(log_likelihoods)
+        plt.show()
+
 def main():
-    n_topics = 2
+    n_topics = 3
     embedding_size = 50
-    train_iters = 2
+    train_iters = 3
     custom_stop_words = ['_', 'link']
     path = "./documents/csv/global_warming_tweets.csv"
     # path = "./documents/txt_sentoken/"
@@ -332,13 +366,15 @@ def main():
     print("load time: {}".format(load_time))
     print("train time: {}".format(train_time))
 
-    weiftm.print_phi(100)
-    np.set_printoptions(threshold=np.nan)
-    print(weiftm.b)
-    print(log_likelihoods)
+    # weiftm.print_theta()
+    print(list(weiftm.labels.values()))
+    print(weiftm.get_classification_accuracy(n_topics))
+    # weiftm.print_phi(100)
+    # np.set_printoptions(threshold=np.nan)
+    # print(weiftm.b)
 
-    plt.plot(log_likelihoods)
-    plt.show()
+
+    # weiftm.plot_log_likelihoods(log_likelihoods, path)
 
 
 if __name__ == '__main__':

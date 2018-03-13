@@ -41,8 +41,7 @@ def preprocess_tweets(documents, vocabulary, custom_stop_words):
 				stem_to_possible_words[stem] = []
 			stem_to_possible_words[stem].append(token)
 			stemmed_tokens.append(stem)
-		if len(stemmed_tokens) > 0:
-			texts.append(stemmed_tokens)
+		texts.append(stemmed_tokens)
 	for stem in stem_to_possible_words:
 		possible_words = stem_to_possible_words[stem]
 		stem_to_word[stem] = max(set(possible_words), key=possible_words.count)
