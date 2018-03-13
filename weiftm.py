@@ -166,11 +166,10 @@ class WEIFTM():
         for document_index, Z_document in enumerate(self.Z):
             document_length = len(Z_document)
             for token_index, Z_token_pair in enumerate(Z_document):
-                print("gibbs iter", time.time() - gibbs_iter_time)
-                # input("start next iter?")
-
-                gibbs_iter_time = time.time()
-                print(token_index, "/", document_length, document_index, "/", self.n_documents)
+                
+                # print("gibbs iter", time.time() - gibbs_iter_time)
+                # gibbs_iter_time = time.time()
+                # print(token_index, "/", document_length, document_index, "/", self.n_documents)
 
                 word_index = Z_token_pair[0]
                 topic_assignment = Z_token_pair[1]
@@ -232,22 +231,10 @@ class WEIFTM():
             # sample lamb
             self.SIGMA_inv[k] += (self.gamma[k,word_index] - old_gamm_k_word_index) * self.f_outer[word_index]
             SIGMA_k = np.linalg.inv(self.SIGMA_inv[k])
-
-            # start_time = time.time()
-            self.b_cgam[k, word_index] = (self.b[k, word_index] - .5 - self.c[k]*self.gamma[k, word_index])
-            # print("b_cgam", time.time() - start_time)
-
-            # start_time = time.time()
+            self.b_cgam[k, word_index] = self.b[k, word_index] - .5 - self.c[k]*self.gamma[k, word_index]
             self.b_cgam_f[k] = self.b_cgam[k, word_index] * self.f[word_index]
-            # print("b_cgam_f", time.time() - start_time)
-
-            # start_time = time.time()
             self.MU[k] = np.matmul(SIGMA_k, self.b_cgam_f[k])
-            # print("MU_k", time.time() - start_time)
-
-            # start_time = time.time()
             self.lamb[k] = np.random.multivariate_normal(self.MU[k], SIGMA_k)
-            # print("lamb_k", time.time() - start_time)
 
             # sample c
             # start_time = time.time()
@@ -255,17 +242,15 @@ class WEIFTM():
             # print("sig_k", time.time() - start_time)
 
             # start_time = time.time()
-            mu_k = sig_k * np.sum(self.b_cgam)
+            mu_k = sig_k * np.sum(self.b_cgam[k])
             # print("mu_k", time.time() - start_time)
 
             # start_time = time.time()
             self.c[k] = np.random.normal(mu_k, sig_k)
             # print("c_k", time.time() - start_time)
 
-            # update pi
-            # start_time = time.time()
-            self.pi[k] = np.matmul(self.lamb[k], self.f.T) + self.c[k]
-            # print("pi_k", time.time() - start_time)
+        # update pi
+        self.pi = np.matmul(self.lamb, self.f.T) + self.c
 
     def _compute_total_log_likelihood(self, n_topics):
         log_likelihood = 0
@@ -328,6 +313,7 @@ def main():
     # path = "./documents/toy/"
     embedding_path = "./glove.6B/glove.6B.{}d.txt".format(embedding_size)
 
+    start_time = time.time()
     weiftm = WEIFTM()
     embedding_vocabulary = weiftm.get_embedding_vocabulary(embedding_path)
 
@@ -337,9 +323,14 @@ def main():
     weiftm.load_corpus(documents, embedding_vocabulary, custom_stop_words)
     weiftm.load_embeddings(embedding_size, embedding_path, path)
 
+    load_time = time.time() - start_time
+
     start_time = time.time()
     log_likelihoods = weiftm.train(n_topics, iters=train_iters)
-    print("time: {}".format(time.time() - start_time))
+    train_time = time.time() - start_time
+
+    print("load time: {}".format(load_time))
+    print("train time: {}".format(train_time))
 
     weiftm.print_phi(100)
     np.set_printoptions(threshold=np.nan)
