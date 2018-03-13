@@ -321,14 +321,20 @@ class WEIFTM():
         prediction_set = set(predictions)
         label_set = set(self.labels.values())
         accuracies = []
-        for tup in itertools.permutations(label_set, len(prediction_set)):
-            count = 0.
-            for index in self.labels:
-                if self.labels[index] == tup[predictions[index]]:
-                    count += 1.
-            accuracies.append(count / len(predictions))
-        print(predictions)
-        print(accuracies)
+        if len(label_set) >= len(prediction_set):
+            for tup in itertools.permutations(label_set, len(prediction_set)):
+                count = 0.
+                for index in self.labels:
+                    if self.labels[index] == tup[predictions[index]]:
+                        count += 1.
+                accuracies.append(count / len(predictions))
+        else:
+            for tup in itertools.permutations(prediction_set, len(label_set)):
+                count = 0.
+                for index in self.labels:
+                    if tup[self.labels[index]] == predictions[index]:
+                        count += 1.
+                accuracies.append(count / len(predictions))
         return max(accuracies)
 
     def plot_log_likelihoods(self, log_likelihoods, path):
@@ -340,9 +346,9 @@ class WEIFTM():
         plt.show()
 
 def main():
-    n_topics = 3
+    n_topics = 2
     embedding_size = 50
-    train_iters = 3
+    train_iters = 2
     custom_stop_words = ['_', 'link']
     path = "./documents/csv/global_warming_tweets.csv"
     # path = "./documents/txt_sentoken/"
@@ -368,15 +374,13 @@ def main():
     print("load time: {}".format(load_time))
     print("train time: {}".format(train_time))
 
-    # weiftm.print_theta()
-    print(list(weiftm.labels.values()))
-    print(weiftm.get_classification_accuracy(n_topics))
-    # weiftm.print_phi(100)
-    # np.set_printoptions(threshold=np.nan)
-    # print(weiftm.b)
+    np.set_printoptions(threshold=np.nan)
+    print('Classification Accuracy: {}'.format(weiftm.get_classification_accuracy(n_topics)))
+    weiftm.print_theta()
+    weiftm.print_phi(100)
+    print(weiftm.b)
 
-
-    # weiftm.plot_log_likelihoods(log_likelihoods, path)
+    weiftm.plot_log_likelihoods(log_likelihoods, path)
 
 
 if __name__ == '__main__':
