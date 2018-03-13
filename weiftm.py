@@ -121,8 +121,9 @@ class WEIFTM():
 
     def _init_gamma(self, n_topics):
         self.gamma = np.empty((n_topics, self.n_words))
-        for v in range(self.n_words):
-            self._sample_gamma(v)
+        for k in range(n_topics):
+            for word_index in range(self.n_words):
+                self.gamma[k,word_index] = self.pg.pgdraw(1, self.pi[k,word_index])
 
     def _init_SIGMA_inv(self, n_topics):
         self.SIGMA_inv = np.empty((n_topics, self.embedding_size, self.embedding_size))
