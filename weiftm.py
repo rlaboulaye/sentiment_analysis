@@ -18,7 +18,7 @@ class WEIFTM():
         self.NO_TOPIC = -1
         self.pg = PyPolyaGamma()
 
-    def _get_documents(self, directory_path):
+    def get_documents(self, directory_path):
         documents = []
         for (path,dirs,files) in os.walk(directory_path):
             files.sort()
@@ -43,8 +43,7 @@ class WEIFTM():
                     vocabulary.add(word)
         return vocabulary
 
-    def load_corpus(self, corpus_dir, vocabulary):
-        documents = self._get_documents(corpus_dir)
+    def load_corpus(self, documents, vocabulary):
         preprocessed_documents = preprocess_tweets(documents, vocabulary)
         self.dictionary = corpora.Dictionary(preprocessed_documents)
         self.n_words = len(self.dictionary)
@@ -298,7 +297,8 @@ def main():
 
     weiftm = WEIFTM()
     embedding_vocabulary = weiftm.get_embedding_vocabulary(embedding_path)
-    weiftm.load_corpus(corpus_dir, embedding_vocabulary)
+    documents = weiftm.get_documents(corpus_dir)
+    weiftm.load_corpus(documents, embedding_vocabulary)
     weiftm.load_embeddings(embedding_size, embedding_path, corpus_dir)
 
     start_time = time.time()
