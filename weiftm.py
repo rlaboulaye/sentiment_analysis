@@ -77,8 +77,9 @@ class WEIFTM():
         self._init_n_m_Z(n_topics)
         self._init_lamb(n_topics)
         self._init_c(n_topics)
-        self._set_pi()
+        self._init_pi()
         self._init_gamma(n_topics)
+        self._init_SIGMA_inv(n_topics)
 
     def _init_b(self, n_topics, topic_sparsity):
         self.b = np.random.binomial(1, topic_sparsity, (n_topics, self.n_words))
@@ -115,13 +116,18 @@ class WEIFTM():
         sig_I_c = self.sig_0**2 * np.eye(n_topics)
         self.c = np.random.multivariate_normal(np.zeros(n_topics), sig_I_c).reshape((-1,1))
 
-    def _set_pi(self):
+    def _init_pi(self):
         self.pi = np.matmul(self.lamb, self.f.T) + self.c
 
     def _init_gamma(self, n_topics):
         self.gamma = np.empty((n_topics, self.n_words))
         for v in range(self.n_words):
             self._sample_gamma(v)
+
+    def _init_SIGMA_inv(self, n_topics):
+        self.SIGMA_inv = np.empty((n_topics, self.embedding_size, self.embedding_size))
+        for k in range(n_topics):
+            self.SIGMA_inv[k] = np.matmul(self.f_outer.T, self.gamma[k]) + self.sig_I_lamb_inv
 
     def train(self, n_topics, topic_sparsity=.3, alpha_0=.1, beta_0=.01, delta_0=1, sig_0=1, iters=10):
         self.alpha_0 = alpha_0
@@ -146,8 +152,10 @@ class WEIFTM():
             document_length = len(Z_document)
             for token_index, Z_token_pair in enumerate(Z_document):
                 # print("gibbs iter", time.time() - gibbs_iter_time)
+                # input("start next iter?")
+
                 # gibbs_iter_time = time.time()
-                # print(document_index, token_index, document_length)
+                # print(token_index, "/", document_length, document_index, "/", self.n_documents)
 
                 word_index = Z_token_pair[0]
                 topic_assignment = Z_token_pair[1]
@@ -169,17 +177,8 @@ class WEIFTM():
                     self.m[document_index, topic_assignment] += 1
 
                 # start_time = time.time()
-                # self._sample_gamma()
-                self._sample_gamma(word_index)
-                # print("sample_gamma", time.time() - start_time)
-
-                # start_time = time.time()
-                self._sample_lamb_and_c(n_topics)
-                # print("sample_lamb_and_c", time.time() - start_time)
-
-                # start_time = time.time()
-                self._set_pi()
-                # print("set_pi", time.time() - start_time)
+                self._sample_embeddings(n_topics, word_index)
+                # print("sample_embeddings", time.time() - start_time)
 
     def _sample_b(self, word_index):
         b_not_v = self.b_sum_ax1 - self.b[:, word_index]
@@ -209,24 +208,15 @@ class WEIFTM():
             topic_assignment = np.random.multinomial(1, p).argmax()
         return topic_assignment
 
-    # def _sample_gamma(self):
-    def _sample_gamma(self, word_index):
-        for k in range(self.pi.shape[0]):
-            # for v in range(self.pi.shape[1]):
-            #     self.gamma[k,v] = self.pg.pgdraw(1, self.pi[k,v])
+    def _sample_embeddings(self, n_topics, word_index):
+        for k in range(n_topics):
+            # sample gamma
+            old_gamm_k_word_index = self.gamma[k,word_index]
             self.gamma[k,word_index] = self.pg.pgdraw(1, self.pi[k,word_index])
 
-    def _sample_lamb_and_c(self, n_topics):
-        for k in range(n_topics):
-            # sample lambda
-
-            # start_time = time.time()
-            SIGMA_k_inv =  np.matmul(self.f_outer.T, self.gamma[k]) + self.sig_I_lamb_inv
-            # print("SIGMA_k_inv", time.time() - start_time)
-
-            # start_time = time.time()
-            SIGMA_k = np.linalg.inv(SIGMA_k_inv)
-            # print("SIGMA_k", time.time() - start_time)
+            # sample lamb
+            self.SIGMA_inv[k] += (self.gamma[k,word_index] - old_gamm_k_word_index) * self.f_outer[word_index]
+            SIGMA_k = np.linalg.inv(self.SIGMA_inv[k])
 
             # start_time = time.time()
             b_cgam = (self.b[k] - .5 - self.c[k]*self.gamma[k])
@@ -239,6 +229,7 @@ class WEIFTM():
             # start_time = time.time()
             self.lamb[k] = np.random.multivariate_normal(MU_k, SIGMA_k)
             # print("lamb_k", time.time() - start_time)
+
             # sample c
             # start_time = time.time()
             sig_k = (np.sum(self.gamma[k]) + self.sig_0**-2)**-1
@@ -251,6 +242,9 @@ class WEIFTM():
             # start_time = time.time()
             self.c[k] = np.random.normal(mu_k, sig_k)
             # print("c_k", time.time() - start_time)
+
+            # update pi
+            self.pi[k] = np.matmul(self.lamb[k], self.f.T) + self.c[k]
 
     def _compute_total_log_likelihood(self, n_topics):
         log_likelihood = 0
