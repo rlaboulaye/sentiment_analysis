@@ -51,8 +51,8 @@ class WEIFTM():
     def get_documents_from_csv(self, csv_path, text_name="text", class_name="class"):
         with open(csv_path, 'r', encoding='utf8', errors='ignore') as csv_file:
             dataframe = pd.read_csv(StringIO(csv_file.read()))
-            dataframe = dataframe.iloc[np.random.permutation(dataframe.shape[0])[:10]]
-            dataframe = dataframe.reset_index()
+            # dataframe = dataframe.iloc[np.random.permutation(dataframe.shape[0])[:10]]
+            # dataframe = dataframe.reset_index()
             dataframe = dataframe.fillna(value={class_name: ''})
             dataframe[class_name] = LabelEncoder().fit_transform(dataframe[class_name])
             self.labels = dict(dataframe[class_name])
@@ -393,9 +393,10 @@ class WEIFTM():
 def main():
     n_topics = 2
     embedding_size = 50
-    train_iters = 2
+    train_iters = 5
     custom_stop_words = ['_', 'link']
-    path = "./documents/csv/global_warming_tweets.csv"
+    # path = "./documents/csv/global_warming_tweets.csv"
+    path = "./documents/csv/musk_trump.csv"
     # path = "./documents/txt_sentoken/"
     # path = "./documents/toy/"
     embedding_path = "./glove.6B/glove.6B.{}d.txt".format(embedding_size)
