@@ -2,6 +2,7 @@ import os
 import time
 from io import StringIO
 import itertools
+import pickle
 
 import numpy as np
 from scipy.stats import bernoulli, dirichlet, norm
@@ -18,11 +19,7 @@ from preprocess import preprocess_tweets
 
 class WEIFTM():
 
-    def __init__(self):
-        self.NO_TOPIC = -1
-        self.TEXT_NAME = "text"
-        self.CLASS_NAME = "class"
-        self.pg = PyPolyaGamma()
+    NO_TOPIC = -1
 
     def get_documents_from_directory(self, directory_path):
         documents = []
@@ -40,13 +37,13 @@ class WEIFTM():
                         print(e)
         return documents
 
-    def get_documents_from_csv(self, csv_path):
+    def get_documents_from_csv(self, csv_path, text_name="text", class_name="class"):
         with open(csv_path, 'r', encoding='utf8', errors='ignore') as csv_file:
             dataframe = pd.read_csv(StringIO(csv_file.read()))[:20]
-            dataframe = dataframe.fillna(value={self.CLASS_NAME: ''})
-            dataframe[self.CLASS_NAME] = LabelEncoder().fit_transform(dataframe[self.CLASS_NAME])
-            self.labels = dict(dataframe[self.CLASS_NAME])
-            return list(dataframe[self.TEXT_NAME])
+            dataframe = dataframe.fillna(value={class_name: ''})
+            dataframe[class_name] = LabelEncoder().fit_transform(dataframe[class_name])
+            self.labels = dict(dataframe[class_name])
+            return list(dataframe[text_name])
 
     def get_embedding_vocabulary(self, embedding_path):
         vocabulary = set()
@@ -111,7 +108,7 @@ class WEIFTM():
                 for _ in range(count):
                     nonzero_b = self.b[:, word_index].nonzero()[0]
                     if len(nonzero_b) == 0:
-                        topic_assignment = self.NO_TOPIC
+                        topic_assignment = WEIFTM.NO_TOPIC
                     else:
                         topic_assignment = np.random.choice(nonzero_b)
                         self.n[topic_assignment, word_index] += 1
@@ -157,6 +154,7 @@ class WEIFTM():
         self.beta_0 = beta_0
         self.delta_0 = delta_0
         self.sig_0 = sig_0
+        self.pg = PyPolyaGamma()
         self._initialize_parameters(n_topics, topic_sparsity)
         self.log_likelihoods = []
         for i in range(iters):
@@ -170,7 +168,7 @@ class WEIFTM():
         return self.log_likelihoods
 
     def _gibbs_sample(self, n_topics):
-        gibbs_iter_time = time.time()
+        # gibbs_iter_time = time.time()
         for document_index, Z_document in enumerate(self.Z):
             document_length = len(Z_document)
             for token_index, Z_token_pair in enumerate(Z_document):
@@ -181,7 +179,7 @@ class WEIFTM():
 
                 word_index = Z_token_pair[0]
                 topic_assignment = Z_token_pair[1]
-                if topic_assignment != self.NO_TOPIC:
+                if topic_assignment != WEIFTM.NO_TOPIC:
                     self.n[topic_assignment, word_index] -= 1
                     self.m[document_index, topic_assignment] -= 1
 
@@ -194,7 +192,7 @@ class WEIFTM():
                 # print("sample_z", time.time() - start_time)
                 Z_token_pair[1] = topic_assignment
 
-                if topic_assignment != self.NO_TOPIC:
+                if topic_assignment != WEIFTM.NO_TOPIC:
                     self.n[topic_assignment, word_index] += 1
                     self.m[document_index, topic_assignment] += 1
 
@@ -223,7 +221,7 @@ class WEIFTM():
 
     def _sample_z(self, document_index, word_index):
         if self.b[:,word_index].sum() == 0:
-            topic_assignment = self.NO_TOPIC
+            topic_assignment = WEIFTM.NO_TOPIC
         else:
             p = (self.alpha_0 + self.m[document_index]) * (self.n[:,word_index].flatten() + self.beta_0) / (self.n[:,word_index] + self.beta_0).sum() * self.b[:,word_index]
             p /= p.sum()
@@ -339,6 +337,22 @@ class WEIFTM():
         plt.plot(log_likelihoods)
         plt.show()
 
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state.pop("pg")
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+
+    def save(self, path):
+        pickle.dump(self, open(path, "wb"))
+
+    @staticmethod
+    def load(path):
+        return pickle.load(open(path, "rb"))
+
+
 def main():
     n_topics = 3
     embedding_size = 50
@@ -364,6 +378,10 @@ def main():
     start_time = time.time()
     log_likelihoods = weiftm.train(n_topics, iters=train_iters)
     train_time = time.time() - start_time
+
+    pickle_path = path.strip("/").rsplit("/", 1)[-1] + ".p"
+    weiftm.save(pickle_path)
+    weiftm2 = WEIFTM.load(pickle_path)
 
     print("load time: {}".format(load_time))
     print("train time: {}".format(train_time))
