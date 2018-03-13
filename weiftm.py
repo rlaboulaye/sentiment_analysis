@@ -30,6 +30,7 @@ class WEIFTM():
         self.topic_sparsity = topic_sparsity
         self.delta_0 = delta_0
         self.log_likelihoods = []
+        self.accuracies = []
 
     def get_documents_from_directory(self, directory_path):
         self.labels = {}
@@ -193,7 +194,7 @@ class WEIFTM():
             self.log_likelihoods.append(self._compute_total_log_likelihood())
             # print("log_likelihood", time.time() - start_time)
 
-            self.accuracies.append(self.get_classification_accuracy(n_topics))
+            self.accuracies.append(self.get_classification_accuracy())
         return self.log_likelihoods, self.accuracies
 
     def _gibbs_sample(self):
@@ -349,7 +350,7 @@ class WEIFTM():
         label_set = set(self.labels.values())
         accuracies = []
 
-        if n_topics >= len(label_set):
+        if self.n_topics >= len(label_set):
             for tup in itertools.permutations(prediction_set, len(label_set)):
                 count = 0.
                 for index in self.labels:
@@ -357,7 +358,7 @@ class WEIFTM():
                         count += 1.
                 accuracies.append(count / len(predictions))
         else:
-            for tup in itertools.permutations(label_set, n_topics):
+            for tup in itertools.permutations(label_set, self.n_topics):
                 count = 0.
                 for index in self.labels:
                     if self.labels[index] == tup[predictions[index]]:
@@ -418,7 +419,7 @@ def main():
     init_time = time.time() - start_time
 
     start_time = time.time()
-    log_likelihoods, classification_accuracies = weiftm.train(n_topics, iters=train_iters)
+    log_likelihoods, classification_accuracies = weiftm.train(iters=train_iters)
     train_time = time.time() - start_time
 
     pickle_path = path.strip("/").rsplit("/", 1)[-1] + ".p"
