@@ -186,9 +186,9 @@ class WEIFTM():
 
     def train(self, iters=10):
         for i in range(iters):
-            # start_time = time.time()
+            start_time = time.time()
             self._gibbs_sample()
-            # print("gibbs", time.time() - start_time)
+            print("gibbs", time.time() - start_time)
 
             # start_time = time.time()
             self.log_likelihoods.append(self._compute_total_log_likelihood())
@@ -346,7 +346,7 @@ class WEIFTM():
     def print_theta(self):
         theta = self.get_theta()
         for document_index, document in enumerate(theta):
-            print('Document {}:'.format(document_index), document)
+            print('Document {}:'.format(document_index), '; Label {}'.format(self.labels[document_index]), document)
 
     def get_classification_accuracy(self):
         theta = self.get_theta()
@@ -399,10 +399,11 @@ class WEIFTM():
 def main():
     n_topics = 2
     embedding_size = 50
-    train_iters = 5
+    train_iters = 25
     custom_stop_words = ['_', 'link', 's']
     # path = "./documents/csv/global_warming_tweets.csv"
-    path = "./documents/csv/musk_trump.csv"
+    # path = "./documents/csv/musk_trump.csv"
+    path = "./documents/csv/food_sports.csv"
     # path = "./documents/txt_sentoken/"
     # path = "./documents/toy/"
     embedding_path = "./glove.6B/glove.6B.{}d.txt".format(embedding_size)
