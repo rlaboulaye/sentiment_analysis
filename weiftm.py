@@ -51,10 +51,10 @@ class WEIFTM():
     def get_documents_from_csv(self, csv_path, text_name="text", class_name="class"):
         with open(csv_path, 'r', encoding='utf8', errors='ignore') as csv_file:
             dataframe = pd.read_csv(StringIO(csv_file.read()))
-            dataframe = dataframe.iloc[np.random.permutation(dataframe.shape[0])[:500]]
+            dataframe = dataframe.iloc[np.random.permutation(dataframe.shape[0])[:10]]
             dataframe = dataframe.reset_index()
             dataframe = dataframe.fillna(value={class_name: ''})
-            dataframe[self.CLASS_NAME] = LabelEncoder().fit_transform(dataframe[class_name])
+            dataframe[class_name] = LabelEncoder().fit_transform(dataframe[class_name])
             self.labels = dict(dataframe[class_name])
             return list(dataframe[text_name])
 
@@ -301,7 +301,7 @@ class WEIFTM():
 
             for token_index in range(len(self.Z[document_index])):
                 word_index, topic_index = self.Z[document_index][token_index]
-                if topic_index != self.NO_TOPIC:
+                if topic_index != WEIFTM.NO_TOPIC:
                     # w
                     log_likelihood += log_phi[topic_index, word_index]
                     # z
@@ -393,7 +393,7 @@ class WEIFTM():
 def main():
     n_topics = 2
     embedding_size = 50
-    train_iters = 10
+    train_iters = 2
     custom_stop_words = ['_', 'link']
     path = "./documents/csv/global_warming_tweets.csv"
     # path = "./documents/txt_sentoken/"
