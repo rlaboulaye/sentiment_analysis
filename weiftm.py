@@ -25,9 +25,14 @@ class WEIFTM():
         self.pg = PyPolyaGamma()
 
     def get_documents_from_directory(self, directory_path):
+        self.labels = {}
+        count = 0
+        class_count = -1
+        classes = set()
         documents = []
         for (path,dirs,files) in os.walk(directory_path):
             files.sort()
+            cl = path.strip(os.path.sep).split(os.path.sep)[-1]
             for file_path in files:
                 if file_path.endswith('.txt'):
                     document_path = os.path.join(path, file_path)
@@ -36,13 +41,20 @@ class WEIFTM():
                         document = file.read()
                         file.close()
                         documents.append(document)
+                        if cl not in classes:
+                            classes.add(cl)
+                            class_count += 1
+                        self.labels[count] = class_count
+                        count += 1
                     except Exception as e:
                         print(e)
         return documents
 
     def get_documents_from_csv(self, csv_path):
         with open(csv_path, 'r', encoding='utf8', errors='ignore') as csv_file:
-            dataframe = pd.read_csv(StringIO(csv_file.read()))[:20]
+            dataframe = pd.read_csv(StringIO(csv_file.read()))
+            dataframe = dataframe.iloc[np.random.permutation(dataframe.shape[0])[:500]]
+            dataframe = dataframe.reset_index()
             dataframe = dataframe.fillna(value={self.CLASS_NAME: ''})
             dataframe[self.CLASS_NAME] = LabelEncoder().fit_transform(dataframe[self.CLASS_NAME])
             self.labels = dict(dataframe[self.CLASS_NAME])
@@ -159,6 +171,7 @@ class WEIFTM():
         self.sig_0 = sig_0
         self._initialize_parameters(n_topics, topic_sparsity)
         self.log_likelihoods = []
+        self.accuracies = []
         for i in range(iters):
             # start_time = time.time()
             self._gibbs_sample(n_topics)
@@ -167,7 +180,9 @@ class WEIFTM():
             # start_time = time.time()
             self.log_likelihoods.append(self._compute_total_log_likelihood(n_topics))
             # print("log_likelihood", time.time() - start_time)
-        return self.log_likelihoods
+
+            self.accuracies.append(self.get_classification_accuracy(n_topics))
+        return self.log_likelihoods, self.accuracies
 
     def _gibbs_sample(self, n_topics):
         gibbs_iter_time = time.time()
@@ -321,34 +336,36 @@ class WEIFTM():
         prediction_set = set(predictions)
         label_set = set(self.labels.values())
         accuracies = []
-        if len(label_set) >= len(prediction_set):
-            for tup in itertools.permutations(label_set, len(prediction_set)):
-                count = 0.
-                for index in self.labels:
-                    if self.labels[index] == tup[predictions[index]]:
-                        count += 1.
-                accuracies.append(count / len(predictions))
-        else:
+
+        if n_topics >= len(label_set):
             for tup in itertools.permutations(prediction_set, len(label_set)):
                 count = 0.
                 for index in self.labels:
                     if tup[self.labels[index]] == predictions[index]:
                         count += 1.
                 accuracies.append(count / len(predictions))
+        else:
+            for tup in itertools.permutations(label_set, n_topics):
+                count = 0.
+                for index in self.labels:
+                    if self.labels[index] == tup[predictions[index]]:
+                        count += 1.
+                accuracies.append(count / len(predictions))
+
         return max(accuracies)
 
-    def plot_log_likelihoods(self, log_likelihoods, path):
+    def plot(self, values, ylabel, path):
         title = path.strip(os.path.sep).strip('.csv').split(os.path.sep)[-1]
         plt.title(title)
         plt.xlabel('epoch')
-        plt.ylabel('log likehood')
-        plt.plot(log_likelihoods)
+        plt.ylabel(ylabel)
+        plt.plot(values)
         plt.show()
 
 def main():
     n_topics = 2
     embedding_size = 50
-    train_iters = 2
+    train_iters = 10
     custom_stop_words = ['_', 'link']
     path = "./documents/csv/global_warming_tweets.csv"
     # path = "./documents/txt_sentoken/"
@@ -368,19 +385,19 @@ def main():
     load_time = time.time() - start_time
 
     start_time = time.time()
-    log_likelihoods = weiftm.train(n_topics, iters=train_iters)
+    log_likelihoods, classification_accuracies = weiftm.train(n_topics, iters=train_iters)
     train_time = time.time() - start_time
 
     print("load time: {}".format(load_time))
     print("train time: {}".format(train_time))
 
     np.set_printoptions(threshold=np.nan)
-    print('Classification Accuracy: {}'.format(weiftm.get_classification_accuracy(n_topics)))
     weiftm.print_theta()
     weiftm.print_phi(100)
     print(weiftm.b)
 
-    weiftm.plot_log_likelihoods(log_likelihoods, path)
+    weiftm.plot(log_likelihoods, 'log likelihood', path)
+    weiftm.plot(classification_accuracies, 'classification accuracy', path)
 
 
 if __name__ == '__main__':
