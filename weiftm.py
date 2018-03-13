@@ -6,7 +6,7 @@ import pickle
 
 import numpy as np
 from scipy.stats import bernoulli, dirichlet, norm
-from scipy.special import beta as beta_function, expit as sigmoid
+from scipy.special import beta as beta_function, gamma as gamma_function, expit as sigmoid
 from matplotlib import pyplot as plt
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
@@ -186,9 +186,9 @@ class WEIFTM():
 
     def train(self, iters=10):
         for i in range(iters):
-            # start_time = time.time()
+            start_time = time.time()
             self._gibbs_sample()
-            # print("gibbs", time.time() - start_time)
+            print("gibbs", time.time() - start_time)
 
             # start_time = time.time()
             self.log_likelihoods.append(self._compute_total_log_likelihood())
@@ -286,6 +286,9 @@ class WEIFTM():
         # update pi
         self.pi = np.matmul(self.lamb, self.f.T) + self.c
 
+    def dirichlet_pdf_log(self, x, alpha):
+        return np.sum(np.log(np.power(x, alpha - 1))) - np.sum(np.log(gamma_function(alpha))) + np.log(gamma_function(np.sum(alpha)))
+
     def _compute_total_log_likelihood(self):
         log_likelihood = 0
 
@@ -298,7 +301,8 @@ class WEIFTM():
 
         for document_index in range(self.n_documents):
             # theta
-            log_likelihood += np.log(dirichlet.pdf(theta[document_index], ALPHA))
+            # log_likelihood += np.log(dirichlet.pdf(theta[document_index], ALPHA))
+            log_likelihood += self.dirichlet_pdf_log(theta[document_index], ALPHA)
 
             for token_index in range(len(self.Z[document_index])):
                 word_index, topic_index = self.Z[document_index][token_index]
@@ -314,7 +318,8 @@ class WEIFTM():
             # phi
             b_k_nonzero = self.b[k].nonzero()[0]
             BETA = self.beta_0 * np.ones(b_k_nonzero.shape[0])
-            log_likelihood += np.log(dirichlet.pdf(phi[k][b_k_nonzero], BETA))
+            # log_likelihood += np.log(dirichlet.pdf(phi[k][b_k_nonzero], BETA))
+            log_likelihood += self.dirichlet_pdf_log(phi[k][b_k_nonzero], BETA)
             # c
             log_likelihood += np.log(norm.pdf(self.c[k], 0, self.sig_0))
 
@@ -341,7 +346,7 @@ class WEIFTM():
     def print_theta(self):
         theta = self.get_theta()
         for document_index, document in enumerate(theta):
-            print('Document {}:'.format(document_index), document)
+            print('Document {}:'.format(document_index), '; Label {}'.format(self.labels[document_index]), document)
 
     def get_classification_accuracy(self):
         theta = self.get_theta()
@@ -394,10 +399,12 @@ class WEIFTM():
 def main():
     n_topics = 2
     embedding_size = 50
-    train_iters = 5
-    custom_stop_words = ['_', 'link']
+    train_iters = 25
+    custom_stop_words = ['_', 'link', 's']
     # path = "./documents/csv/global_warming_tweets.csv"
-    path = "./documents/csv/musk_trump.csv"
+    # path = "./documents/csv/musk_trump.csv"
+    # path = "./documents/csv/food_sports.csv"
+    path = "./documents/csv/news_animals_food.csv"
     # path = "./documents/txt_sentoken/"
     # path = "./documents/toy/"
     embedding_path = "./glove.6B/glove.6B.{}d.txt".format(embedding_size)
