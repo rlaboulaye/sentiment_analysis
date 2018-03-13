@@ -22,6 +22,16 @@ class WEIFTM():
 
     NO_TOPIC = -1
 
+    def __init__(self, n_topics, alpha_0=.1, beta_0=.01, sig_0=1, topic_sparsity=.3, delta_0=1):
+        self.n_topics = n_topics
+        self.alpha_0 = alpha_0
+        self.beta_0 = beta_0
+        self.sig_0 = sig_0
+        self.topic_sparsity = topic_sparsity
+        self.delta_0 = delta_0
+        self.log_likelihoods = []
+        self.accuracies = []
+
     def get_documents_from_directory(self, directory_path):
         self.labels = {}
         count = 0
@@ -108,23 +118,21 @@ class WEIFTM():
         self.embedding_size_raw = self.embedding_size
         self.embedding_size = n_components
 
-    def _initialize_parameters(self, n_topics, topic_sparsity):
-        self._init_b(n_topics, topic_sparsity)
-        self._init_n_m_Z(n_topics)
-        self._init_lamb(n_topics)
-        self._init_c(n_topics)
+    def initialize_parameters(self):
+        self._init_b()
+        self._init_n_m_Z()
+        self._init_lamb()
+        self._init_c()
         self._init_pi()
-        self._init_embedding_aux_params(n_topics)
+        self._init_embedding_aux_params()
 
-    def _init_b(self, n_topics, topic_sparsity):
-        self.b = np.random.binomial(1, topic_sparsity, (n_topics, self.n_words))
+    def _init_b(self):
+        self.b = np.random.binomial(1, self.topic_sparsity, (self.n_topics, self.n_words))
         self.b_sum_ax1 = np.sum(self.b, axis=1)
 
-    def _init_n_m_Z(self, n_topics):
-        assert(hasattr(self, "b"))
-
-        self.n = np.zeros((n_topics, self.n_words))
-        self.m = np.zeros((self.n_documents, n_topics))
+    def _init_n_m_Z(self):
+        self.n = np.zeros((self.n_topics, self.n_words))
+        self.m = np.zeros((self.n_documents, self.n_topics))
         self.Z = []
         for document_index, document in enumerate(self.corpus):
             Z_document = []
@@ -142,26 +150,27 @@ class WEIFTM():
                     Z_document.append([word_index, topic_assignment])
             self.Z.append(Z_document)
 
-    def _init_lamb(self, n_topics):
+    def _init_lamb(self):
         sig_I_lamb = self.sig_0**2 * np.eye(self.embedding_size)
-        self.lamb = np.random.multivariate_normal(np.zeros(self.embedding_size), sig_I_lamb, size=n_topics)
+        self.lamb = np.random.multivariate_normal(np.zeros(self.embedding_size), sig_I_lamb, size=self.n_topics)
         self.sig_I_lamb_inv = self.sig_0**-2 * np.eye(self.embedding_size)
 
-    def _init_c(self, n_topics):
-        sig_I_c = self.sig_0**2 * np.eye(n_topics)
-        self.c = np.random.multivariate_normal(np.zeros(n_topics), sig_I_c).reshape((-1,1))
+    def _init_c(self):
+        sig_I_c = self.sig_0**2 * np.eye(self.n_topics)
+        self.c = np.random.multivariate_normal(np.zeros(self.n_topics), sig_I_c).reshape((-1,1))
 
     def _init_pi(self):
         self.pi = np.matmul(self.lamb, self.f.T) + self.c
 
-    def _init_embedding_aux_params(self, n_topics):
-        self.gamma = np.empty((n_topics, self.n_words))
-        self.gamma_sum_ax1 = np.zeros(n_topics)
-        self.SIGMA_inv = np.empty((n_topics, self.embedding_size, self.embedding_size))
-        self.b_cgam = np.empty((n_topics, self.n_words))
-        self.b_cgam_sum_ax1 = np.zeros(n_topics)
-        self.MU = np.empty((n_topics, self.embedding_size))
-        for k in range(n_topics):
+    def _init_embedding_aux_params(self):
+        self.pg = PyPolyaGamma()
+        self.gamma = np.empty((self.n_topics, self.n_words))
+        self.gamma_sum_ax1 = np.zeros(self.n_topics)
+        self.SIGMA_inv = np.empty((self.n_topics, self.embedding_size, self.embedding_size))
+        self.b_cgam = np.empty((self.n_topics, self.n_words))
+        self.b_cgam_sum_ax1 = np.zeros(self.n_topics)
+        self.MU = np.empty((self.n_topics, self.embedding_size))
+        for k in range(self.n_topics):
             for word_index in range(self.n_words):
                 self.gamma[k,word_index] = self.pg.pgdraw(1, self.pi[k,word_index])
                 self.gamma_sum_ax1[k] += self.gamma[k,word_index]
@@ -171,32 +180,24 @@ class WEIFTM():
             self.b_cgam_sum_ax1[k] = np.sum(self.b_cgam[k])
 
         self.b_cgam_f = np.matmul(self.b_cgam, self.f)
-        for k in range(n_topics):
+        for k in range(self.n_topics):
             SIGMA_k = np.linalg.inv(self.SIGMA_inv[k])
             self.MU[k] = np.matmul(SIGMA_k, self.b_cgam_f[k])
 
-    def train(self, n_topics, topic_sparsity=.3, alpha_0=.1, beta_0=.01, delta_0=1, sig_0=1, iters=10):
-        self.alpha_0 = alpha_0
-        self.beta_0 = beta_0
-        self.delta_0 = delta_0
-        self.sig_0 = sig_0
-        self.pg = PyPolyaGamma()
-        self._initialize_parameters(n_topics, topic_sparsity)
-        self.log_likelihoods = []
-        self.accuracies = []
+    def train(self, iters=10):
         for i in range(iters):
             # start_time = time.time()
-            self._gibbs_sample(n_topics)
+            self._gibbs_sample()
             # print("gibbs", time.time() - start_time)
 
             # start_time = time.time()
-            self.log_likelihoods.append(self._compute_total_log_likelihood(n_topics))
+            self.log_likelihoods.append(self._compute_total_log_likelihood())
             # print("log_likelihood", time.time() - start_time)
 
-            self.accuracies.append(self.get_classification_accuracy(n_topics))
+            self.accuracies.append(self.get_classification_accuracy())
         return self.log_likelihoods, self.accuracies
 
-    def _gibbs_sample(self, n_topics):
+    def _gibbs_sample(self):
         # gibbs_iter_time = time.time()
         for document_index, Z_document in enumerate(self.Z):
             document_length = len(Z_document)
@@ -226,7 +227,7 @@ class WEIFTM():
                     self.m[document_index, topic_assignment] += 1
 
                 # start_time = time.time()
-                self._sample_embeddings(n_topics, word_index)
+                self._sample_embeddings(word_index)
                 # print("sample_embeddings", time.time() - start_time)
 
     def _sample_b(self, word_index):
@@ -257,8 +258,8 @@ class WEIFTM():
             topic_assignment = np.random.multinomial(1, p).argmax()
         return topic_assignment
 
-    def _sample_embeddings(self, n_topics, word_index):
-        for k in range(n_topics):
+    def _sample_embeddings(self, word_index):
+        for k in range(self.n_topics):
             # sample gamma
             old_gamma_k_word_index = self.gamma[k,word_index]
             self.gamma[k,word_index] = self.pg.pgdraw(1, self.pi[k,word_index])
@@ -285,7 +286,7 @@ class WEIFTM():
         # update pi
         self.pi = np.matmul(self.lamb, self.f.T) + self.c
 
-    def _compute_total_log_likelihood(self, n_topics):
+    def _compute_total_log_likelihood(self):
         log_likelihood = 0
 
         theta = self.get_theta()
@@ -293,7 +294,7 @@ class WEIFTM():
         phi = self.get_phi()
         log_phi = np.log(phi)
 
-        ALPHA = self.alpha_0 * np.ones(n_topics)
+        ALPHA = self.alpha_0 * np.ones(self.n_topics)
 
         for document_index in range(self.n_documents):
             # theta
@@ -309,7 +310,7 @@ class WEIFTM():
 
         log_likelihood += np.sum(np.log(bernoulli.pmf(self.b, sigmoid(self.pi))))
 
-        for k in range(n_topics):
+        for k in range(self.n_topics):
             # phi
             b_k_nonzero = self.b[k].nonzero()[0]
             BETA = self.beta_0 * np.ones(b_k_nonzero.shape[0])
@@ -342,14 +343,14 @@ class WEIFTM():
         for document_index, document in enumerate(theta):
             print('Document {}:'.format(document_index), document)
 
-    def get_classification_accuracy(self, n_topics):
+    def get_classification_accuracy(self):
         theta = self.get_theta()
         predictions = [distribution.argmax() for distribution in theta]
         prediction_set = set(predictions)
         label_set = set(self.labels.values())
         accuracies = []
 
-        if n_topics >= len(label_set):
+        if self.n_topics >= len(label_set):
             for tup in itertools.permutations(prediction_set, len(label_set)):
                 count = 0.
                 for index in self.labels:
@@ -357,7 +358,7 @@ class WEIFTM():
                         count += 1.
                 accuracies.append(count / len(predictions))
         else:
-            for tup in itertools.permutations(label_set, n_topics):
+            for tup in itertools.permutations(label_set, self.n_topics):
                 count = 0.
                 for index in self.labels:
                     if self.labels[index] == tup[predictions[index]]:
@@ -402,7 +403,7 @@ def main():
     embedding_path = "./glove.6B/glove.6B.{}d.txt".format(embedding_size)
 
     start_time = time.time()
-    weiftm = WEIFTM()
+    weiftm = WEIFTM(n_topics)
     embedding_vocabulary = weiftm.get_embedding_vocabulary(embedding_path)
 
     documents = weiftm.get_documents_from_csv(path)
@@ -415,7 +416,11 @@ def main():
     load_time = time.time() - start_time
 
     start_time = time.time()
-    log_likelihoods, classification_accuracies = weiftm.train(n_topics, iters=train_iters)
+    weiftm.initialize_parameters()
+    init_time = time.time() - start_time
+
+    start_time = time.time()
+    log_likelihoods, classification_accuracies = weiftm.train(iters=train_iters)
     train_time = time.time() - start_time
 
     pickle_path = path.strip("/").rsplit("/", 1)[-1] + ".p"
@@ -423,6 +428,7 @@ def main():
     weiftm2 = WEIFTM.load(pickle_path)
 
     print("load time: {}".format(load_time))
+    print("init time: {}".format(init_time))
     print("train time: {}".format(train_time))
 
     np.set_printoptions(threshold=np.nan)
