@@ -10,6 +10,7 @@ from scipy.special import beta as beta_function, expit as sigmoid
 from matplotlib import pyplot as plt
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
+from sklearn.decomposition import PCA
 
 from gensim import corpora, models
 from pypolyagamma import PyPolyaGamma
@@ -61,7 +62,7 @@ class WEIFTM():
         self.corpus = [self.dictionary.doc2bow(document) for document in preprocessed_documents]
         self.n_documents = len(self.corpus)
 
-    def load_embeddings(self, embedding_size, embedding_path, corpus_dir):
+    def load_embeddings(self, embedding_size, embedding_path, corpus_dir, use_pca=False, pca_var=.97):
         self.embedding_size = embedding_size
         cache_dir = "./cache/{}/".format(corpus_dir.strip(os.path.sep).strip('.csv').split(os.path.sep)[-1])
         embedding_cache_path = cache_dir + "embedding{}.npy".format(embedding_size)
@@ -80,7 +81,21 @@ class WEIFTM():
             if not os.path.isdir(cache_dir):
                 os.makedirs(cache_dir)
             np.save(embedding_cache_path, self.f)
+
+        if use_pca == True:
+            self._embedding_PCA(pca_var)
+
         self.f_outer = np.array([np.outer(f_v,f_v) for f_v in self.f])
+
+    def _embedding_PCA(self, var_percent):
+        self.pca = PCA(self.embedding_size)
+        self.f_raw = self.f
+        self.pca.fit(self.f_raw)
+        n_components = np.argmax(np.cumsum(self.pca.explained_variance_ratio_) > var_percent)
+        print(n_components)
+        self.f = self.pca.transform(self.f_raw)[:, :n_components]
+        self.embedding_size_raw = self.embedding_size
+        self.embedding_size = n_components
 
     def _initialize_parameters(self, n_topics, topic_sparsity):
         self._init_b(n_topics, topic_sparsity)
@@ -371,7 +386,7 @@ def main():
     # documents = weiftm.get_documents_from_directory(path)
 
     weiftm.load_corpus(documents, embedding_vocabulary, custom_stop_words)
-    weiftm.load_embeddings(embedding_size, embedding_path, path)
+    weiftm.load_embeddings(embedding_size, embedding_path, path, use_pca=True)
 
     load_time = time.time() - start_time
 
