@@ -403,7 +403,8 @@ def main():
     custom_stop_words = ['_', 'link', 's']
     # path = "./documents/csv/global_warming_tweets.csv"
     # path = "./documents/csv/musk_trump.csv"
-    path = "./documents/csv/food_sports.csv"
+    # path = "./documents/csv/food_sports.csv"
+    path = "./documents/csv/news_animals_food.csv"
     # path = "./documents/txt_sentoken/"
     # path = "./documents/toy/"
     embedding_path = "./glove.6B/glove.6B.{}d.txt".format(embedding_size)
