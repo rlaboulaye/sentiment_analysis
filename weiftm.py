@@ -133,15 +133,19 @@ class WEIFTM():
 
     def _init_embedding_aux_params(self, n_topics):
         self.gamma = np.empty((n_topics, self.n_words))
+        self.gamma_sum_ax1 = np.zeros(n_topics)
         self.SIGMA_inv = np.empty((n_topics, self.embedding_size, self.embedding_size))
         self.b_cgam = np.empty((n_topics, self.n_words))
+        self.b_cgam_sum_ax1 = np.zeros(n_topics)
         self.MU = np.empty((n_topics, self.embedding_size))
         for k in range(n_topics):
             for word_index in range(self.n_words):
                 self.gamma[k,word_index] = self.pg.pgdraw(1, self.pi[k,word_index])
+                self.gamma_sum_ax1[k] += self.gamma[k,word_index]
 
             self.SIGMA_inv[k] = np.matmul(self.f_outer.T, self.gamma[k]) + self.sig_I_lamb_inv
             self.b_cgam[k] = self.b[k] - .5 - self.c[k]*self.gamma[k]
+            self.b_cgam_sum_ax1[k] = np.sum(self.b_cgam[k])
 
         self.b_cgam_f = np.matmul(self.b_cgam, self.f)
         for k in range(n_topics):
@@ -229,29 +233,27 @@ class WEIFTM():
     def _sample_embeddings(self, n_topics, word_index):
         for k in range(n_topics):
             # sample gamma
-            old_gamm_k_word_index = self.gamma[k,word_index]
+            old_gamma_k_word_index = self.gamma[k,word_index]
             self.gamma[k,word_index] = self.pg.pgdraw(1, self.pi[k,word_index])
+            self.gamma_sum_ax1[k] += self.gamma[k,word_index] - old_gamma_k_word_index
 
             # sample lamb
-            self.SIGMA_inv[k] += (self.gamma[k,word_index] - old_gamm_k_word_index) * self.f_outer[word_index]
+            self.SIGMA_inv[k] += (self.gamma[k,word_index] - old_gamma_k_word_index) * self.f_outer[word_index]
             SIGMA_k = np.linalg.inv(self.SIGMA_inv[k])
+
+            old_b_cgam_k_word_index = self.b_cgam[k, word_index]
             self.b_cgam[k, word_index] = self.b[k, word_index] - .5 - self.c[k]*self.gamma[k, word_index]
+            self.b_cgam_sum_ax1[k] += self.b_cgam[k, word_index] - old_b_cgam_k_word_index
+
             self.b_cgam_f[k] = self.b_cgam[k, word_index] * self.f[word_index]
             self.MU[k] = np.matmul(SIGMA_k, self.b_cgam_f[k])
+
             self.lamb[k] = np.random.multivariate_normal(self.MU[k], SIGMA_k)
 
             # sample c
-            # start_time = time.time()
-            sig_k = (np.sum(self.gamma[k]) + self.sig_0**-2)**-1
-            # print("sig_k", time.time() - start_time)
-
-            # start_time = time.time()
-            mu_k = sig_k * np.sum(self.b_cgam[k])
-            # print("mu_k", time.time() - start_time)
-
-            # start_time = time.time()
+            sig_k = (self.gamma_sum_ax1[k] + self.sig_0**-2)**-1
+            mu_k = sig_k * self.b_cgam_sum_ax1[k]
             self.c[k] = np.random.normal(mu_k, sig_k)
-            # print("c_k", time.time() - start_time)
 
         # update pi
         self.pi = np.matmul(self.lamb, self.f.T) + self.c
