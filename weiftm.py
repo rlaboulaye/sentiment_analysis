@@ -1,10 +1,12 @@
 import os
 import time
+from io import StringIO
 
 import numpy as np
 from scipy.stats import bernoulli, dirichlet, norm
 from scipy.special import beta as beta_function, expit as sigmoid
 from matplotlib import pyplot as plt
+import pandas as pd
 
 from gensim import corpora, models
 from pypolyagamma import PyPolyaGamma
@@ -16,9 +18,11 @@ class WEIFTM():
 
     def __init__(self):
         self.NO_TOPIC = -1
+        self.TEXT_NAME = "text"
+        self.CLASS_NAME = "class"
         self.pg = PyPolyaGamma()
 
-    def get_documents(self, directory_path):
+    def get_documents_from_directory(self, directory_path):
         documents = []
         for (path,dirs,files) in os.walk(directory_path):
             files.sort()
@@ -34,6 +38,12 @@ class WEIFTM():
                         print(e)
         return documents
 
+    def get_documents_from_csv(self, csv_path):
+        with open(csv_path, 'r', encoding='utf8', errors='ignore') as csv_file:
+            dataframe = pd.read_csv(StringIO(csv_file.read()))[:20]
+            self.labels = dict(dataframe[self.CLASS_NAME])
+            return list(dataframe[self.TEXT_NAME])
+
     def get_embedding_vocabulary(self, embedding_path):
         vocabulary = set()
         with open(embedding_path) as emb_file:
@@ -43,8 +53,8 @@ class WEIFTM():
                     vocabulary.add(word)
         return vocabulary
 
-    def load_corpus(self, documents, vocabulary):
-        preprocessed_documents = preprocess_tweets(documents, vocabulary)
+    def load_corpus(self, documents, vocabulary, custom_stop_words=[]):
+        preprocessed_documents = preprocess_tweets(documents, vocabulary, custom_stop_words)
         self.dictionary = corpora.Dictionary(preprocessed_documents)
         self.n_words = len(self.dictionary)
         self.corpus = [self.dictionary.doc2bow(document) for document in preprocessed_documents]
@@ -52,7 +62,7 @@ class WEIFTM():
 
     def load_embeddings(self, embedding_size, embedding_path, corpus_dir):
         self.embedding_size = embedding_size
-        cache_dir = "./cache/{}/".format(corpus_dir.strip(os.path.sep).split(os.path.sep)[-1])
+        cache_dir = "./cache/{}/".format(corpus_dir.strip(os.path.sep).strip('.csv').split(os.path.sep)[-1])
         embedding_cache_path = cache_dir + "embedding{}.npy".format(embedding_size)
         if os.path.isfile(embedding_cache_path):
             self.f = np.load(embedding_cache_path)
@@ -152,15 +162,15 @@ class WEIFTM():
         return self.log_likelihoods
 
     def _gibbs_sample(self, n_topics):
-        # gibbs_iter_time = time.time()
+        gibbs_iter_time = time.time()
         for document_index, Z_document in enumerate(self.Z):
             document_length = len(Z_document)
             for token_index, Z_token_pair in enumerate(Z_document):
-                # print("gibbs iter", time.time() - gibbs_iter_time)
+                print("gibbs iter", time.time() - gibbs_iter_time)
                 # input("start next iter?")
 
-                # gibbs_iter_time = time.time()
-                # print(token_index, "/", document_length, document_index, "/", self.n_documents)
+                gibbs_iter_time = time.time()
+                print(token_index, "/", document_length, document_index, "/", self.n_documents)
 
                 word_index = Z_token_pair[0]
                 topic_assignment = Z_token_pair[1]
@@ -311,23 +321,30 @@ class WEIFTM():
 def main():
     n_topics = 2
     embedding_size = 50
-    train_iters = 10
-    corpus_dir = "./documents/txt_sentoken/"
-    # corpus_dir = "./documents/toy/"
+    train_iters = 2
+    custom_stop_words = ['_', 'link']
+    path = "./documents/csv/global_warming_tweets.csv"
+    # path = "./documents/txt_sentoken/"
+    # path = "./documents/toy/"
     embedding_path = "./glove.6B/glove.6B.{}d.txt".format(embedding_size)
 
     weiftm = WEIFTM()
     embedding_vocabulary = weiftm.get_embedding_vocabulary(embedding_path)
-    documents = weiftm.get_documents(corpus_dir)
-    weiftm.load_corpus(documents, embedding_vocabulary)
-    weiftm.load_embeddings(embedding_size, embedding_path, corpus_dir)
+
+    documents = weiftm.get_documents_from_csv(path)
+    # documents = weiftm.get_documents_from_directory(path)
+
+    weiftm.load_corpus(documents, embedding_vocabulary, custom_stop_words)
+    weiftm.load_embeddings(embedding_size, embedding_path, path)
 
     start_time = time.time()
-    log_likelihoods = weiftm.train(n_topics, iters=25)
+    log_likelihoods = weiftm.train(n_topics, iters=train_iters)
     print("time: {}".format(time.time() - start_time))
 
-    weiftm.print_phi(50)
+    weiftm.print_phi(100)
+    np.set_printoptions(threshold=np.nan)
     print(weiftm.b)
+    print(log_likelihoods)
 
     plt.plot(log_likelihoods)
     plt.show()

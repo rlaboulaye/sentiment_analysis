@@ -19,9 +19,10 @@ def preprocess(documents):
 
 	return texts
 
-def preprocess_tweets(documents, vocabulary):
+def preprocess_tweets(documents, vocabulary, custom_stop_words):
 	tokenizer = RegexpTokenizer(r'\w+\'[a-z]+|\w+')
 	en_stop = get_stop_words('en')
+	en_stop.extend(custom_stop_words)
 	p_stemmer = PorterStemmer()
 
 	stem_to_possible_words = {}
