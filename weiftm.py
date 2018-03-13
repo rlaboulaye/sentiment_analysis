@@ -92,7 +92,6 @@ class WEIFTM():
         self.f_raw = self.f
         self.pca.fit(self.f_raw)
         n_components = np.argmax(np.cumsum(self.pca.explained_variance_ratio_) > var_percent)
-        print(n_components)
         self.f = self.pca.transform(self.f_raw)[:, :n_components]
         self.embedding_size_raw = self.embedding_size
         self.embedding_size = n_components
@@ -393,6 +392,7 @@ def main():
 
     weiftm.load_corpus(documents, embedding_vocabulary, custom_stop_words)
     weiftm.load_embeddings(embedding_size, embedding_path, path, use_pca=True)
+    print("embedding size:", weiftm.embedding_size)
 
     load_time = time.time() - start_time
 
